@@ -10,11 +10,12 @@
          dev.langchain4j/langchain4j-embeddings-all-minilm-l6-v2
          {:mvn/version "0.36.2"}
 
-         ai.djl.huggingface/tokenizers
-         {:mvn/version "0.30.0"}}
+         ai.djl.huggingface/tokenizers {:mvn/version "0.30.0"}
+         org.slf4j/slf4j-nop           {:mvn/version "2.0.17"}
+         org.clojure/clojure           {:mvn/version "1.12.3"}}
 
+ :jvm-args ["--enable-native-access=ALL-UNNAMED"]
  :aliases
  {:test {:extra-paths ["test"]
          :extra-deps  {lambdaisland/kaocha {:mvn/version "1.91.1392"}}}
-  :run  {:exec-fn mcp-vector-search.main/start
-         :exec-args {:config-path "config.edn"}}}}
+  :run  {:exec-fn mcp-vector-search.main/start}}}
