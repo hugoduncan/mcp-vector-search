@@ -15,4 +15,6 @@
 
  :aliases
  {:test {:extra-paths ["test"]
-         :extra-deps  {lambdaisland/kaocha {:mvn/version "1.91.1392"}}}}}
+         :extra-deps  {lambdaisland/kaocha {:mvn/version "1.91.1392"}}}
+  :run  {:exec-fn mcp-vector-search.main/start
+         :exec-args {:config-path "config.edn"}}}}

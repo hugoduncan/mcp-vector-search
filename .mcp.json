@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mcp-vector-search": {
+      "command": "clojure",
+      "args": ["-X:run"]
+    }
+  }
+}
