@@ -1,16 +1,18 @@
 {:paths ["src"]
- :deps {io.github.hugoduncan/mcp-clj
-        {:git/sha "77ca1a2df2c9d261a127272417e92e0728b528fd"}
+ :deps  {io.github.hugoduncan/mcp-clj
+         {:git/url   "https://github.com/hugoduncan/mcp-clj"
+          :git/sha   "77ca1a2df2c9d261a127272417e92e0728b528fd"
+          :deps/root "projects/server"}
 
-        dev.langchain4j/langchain4j
-        {:mvn/version "0.36.2"}
+         dev.langchain4j/langchain4j
+         {:mvn/version "0.36.2"}
 
-        dev.langchain4j/langchain4j-embeddings-all-minilm-l6-v2
-        {:mvn/version "0.36.2"}
+         dev.langchain4j/langchain4j-embeddings-all-minilm-l6-v2
+         {:mvn/version "0.36.2"}
 
-        ai.djl.huggingface/tokenizers
-        {:mvn/version "0.30.0"}}
+         ai.djl.huggingface/tokenizers
+         {:mvn/version "0.30.0"}}
 
  :aliases
  {:test {:extra-paths ["test"]
-         :extra-deps {org.clojure/test.check {:mvn/version "1.1.1"}}}}}
+         :extra-deps  {org.clojure/test.check {:mvn/version "1.1.1"}}}}}
