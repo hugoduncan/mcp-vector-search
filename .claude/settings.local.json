@@ -10,7 +10,8 @@
       "Bash(clojure:*)",
       "WebSearch",
       "WebFetch(domain:mvnrepository.com)",
-      "Bash(git restore:*)"
+      "Bash(git restore:*)",
+      "Read(//Users/duncan/projects/hugoduncan/mcp-clj/**)"
     ],
     "deny": [],
     "ask": []
