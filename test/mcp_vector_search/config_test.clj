@@ -27,3 +27,86 @@
             (is (= 123 (get-in result [:outer :inner :value]))))
           (finally
             (.delete test-file)))))))
+
+(deftest parse-path-spec-test
+  ;; Test parsing path specifications with literals, globs, and named captures
+  (testing "parse-path-spec"
+
+    (testing "parses literal-only paths"
+      (let [result (sut/parse-path-spec "/simple/path/file.md")]
+        (is (= [{:type :literal :value "/simple/path/file.md"}]
+               (:segments result)))
+        (is (= "/simple/path/file.md" (:base-path result)))))
+
+    (testing "parses single glob pattern"
+      (let [result (sut/parse-path-spec "/docs/*.md")]
+        (is (= [{:type :literal :value "/docs/"}
+                {:type :glob :pattern "*"}
+                {:type :literal :value ".md"}]
+               (:segments result)))
+        (is (= "/docs/" (:base-path result)))))
+
+    (testing "parses recursive glob pattern"
+      (let [result (sut/parse-path-spec "/docs/**/guide.md")]
+        (is (= [{:type :literal :value "/docs/"}
+                {:type :glob :pattern "**"}
+                {:type :literal :value "/guide.md"}]
+               (:segments result)))
+        (is (= "/docs/" (:base-path result)))))
+
+    (testing "parses named capture with simple regex"
+      (let [result (sut/parse-path-spec "/v(?<version>[0-9]+)/doc.md")]
+        (is (= [{:type :literal :value "/v"}
+                {:type :capture :name "version" :pattern "[0-9]+"}
+                {:type :literal :value "/doc.md"}]
+               (:segments result)))
+        (is (= "/v" (:base-path result)))))
+
+    (testing "parses named capture with complex regex"
+      (let [result (sut/parse-path-spec "/(?<version>[^/]*)/file")]
+        (is (= [{:type :literal :value "/"}
+                {:type :capture :name "version" :pattern "[^/]*"}
+                {:type :literal :value "/file"}]
+               (:segments result)))
+        (is (= "/" (:base-path result)))))
+
+    (testing "parses mixed pattern with multiple captures"
+      (let [result (sut/parse-path-spec "/(?<lang>[^/]*)/(?<ver>v[0-9]+)/**/*.md")]
+        (is (= [{:type :literal :value "/"}
+                {:type :capture :name "lang" :pattern "[^/]*"}
+                {:type :literal :value "/"}
+                {:type :capture :name "ver" :pattern "v[0-9]+"}
+                {:type :literal :value "/"}
+                {:type :glob :pattern "**"}
+                {:type :literal :value "/"}
+                {:type :glob :pattern "*"}
+                {:type :literal :value ".md"}]
+               (:segments result)))
+        (is (= "/" (:base-path result)))))
+
+    (testing "parses glob and capture combination"
+      (let [result (sut/parse-path-spec "/docs/(?<version>[^/]*)/**.md")]
+        (is (= [{:type :literal :value "/docs/"}
+                {:type :capture :name "version" :pattern "[^/]*"}
+                {:type :literal :value "/"}
+                {:type :glob :pattern "**"}
+                {:type :literal :value ".md"}]
+               (:segments result)))
+        (is (= "/docs/" (:base-path result)))))
+
+    (testing "handles capture at end of path"
+      (let [result (sut/parse-path-spec "/docs/(?<name>[^.]+)\\.md")]
+        (is (= [{:type :literal :value "/docs/"}
+                {:type :capture :name "name" :pattern "[^.]+"}
+                {:type :literal :value "\\.md"}]
+               (:segments result)))
+        (is (= "/docs/" (:base-path result)))))
+
+    (testing "throws on malformed capture - missing closing"
+      (is (thrown? Exception (sut/parse-path-spec "/(?<version[^/]*)/file"))))
+
+    (testing "throws on malformed capture - missing name"
+      (is (thrown? Exception (sut/parse-path-spec "/(?<>[^/]*)/file"))))
+
+    (testing "throws on invalid regex in capture"
+      (is (thrown? Exception (sut/parse-path-spec "/(?<ver>[[[)/file"))))))
