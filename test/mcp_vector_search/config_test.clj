@@ -102,6 +102,26 @@
                (:segments result)))
         (is (= "/docs/" (:base-path result)))))
 
+    (testing "correctly parses /** between literals"
+      (let [result (sut/parse-path-spec "/docs/**/file.md")]
+        (is (= [{:type :literal :value "/docs/"}
+                {:type :glob :pattern "**"}
+                {:type :literal :value "/file.md"}]
+               (:segments result)))
+        (is (= "/docs/" (:base-path result)))))
+
+    (testing "correctly parses multiple special characters in order"
+      (let [result (sut/parse-path-spec "/(?<version>v[0-9]+)/**/*.md")]
+        (is (= [{:type :literal :value "/"}
+                {:type :capture :name "version" :pattern "v[0-9]+"}
+                {:type :literal :value "/"}
+                {:type :glob :pattern "**"}
+                {:type :literal :value "/"}
+                {:type :glob :pattern "*"}
+                {:type :literal :value ".md"}]
+               (:segments result)))
+        (is (= "/" (:base-path result)))))
+
     (testing "throws on malformed capture - missing closing"
       (is (thrown? Exception (sut/parse-path-spec "/(?<version[^/]*)/file"))))
 
