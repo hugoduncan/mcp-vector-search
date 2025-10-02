@@ -1,7 +1,10 @@
 (ns mcp-vector-search.lifecycle-test
-  (:require [clojure.test :refer [deftest testing is]]
-            [mcp-vector-search.lifecycle :as sut])
-  (:import [dev.langchain4j.store.embedding.inmemory InMemoryEmbeddingStore]))
+  (:require
+    [clojure.test :refer [deftest testing is]]
+    [mcp-vector-search.lifecycle :as sut])
+  (:import
+    (dev.langchain4j.store.embedding.inmemory
+      InMemoryEmbeddingStore)))
 
 (deftest lifecycle-test
   ;; Test lifecycle management of the system with embedding model and store.

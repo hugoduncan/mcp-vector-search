@@ -1,12 +1,16 @@
 (ns mcp-vector-search.integration-test
-  (:require [clojure.test :refer [deftest testing is]]
-            [clojure.data.json :as json]
-            [babashka.fs :as fs]
-            [mcp-vector-search.config :as config]
-            [mcp-vector-search.ingest :as ingest]
-            [mcp-vector-search.tools :as tools])
-  (:import [dev.langchain4j.model.embedding.onnx.allminilml6v2 AllMiniLmL6V2EmbeddingModel]
-           [dev.langchain4j.store.embedding.inmemory InMemoryEmbeddingStore]))
+  (:require
+    [babashka.fs :as fs]
+    [clojure.data.json :as json]
+    [clojure.test :refer [deftest testing is]]
+    [mcp-vector-search.config :as config]
+    [mcp-vector-search.ingest :as ingest]
+    [mcp-vector-search.tools :as tools])
+  (:import
+    (dev.langchain4j.model.embedding.onnx.allminilml6v2
+      AllMiniLmL6V2EmbeddingModel)
+    (dev.langchain4j.store.embedding.inmemory
+      InMemoryEmbeddingStore)))
 
 (deftest end-to-end-integration-test
   ;; Test complete pipeline from config to search results

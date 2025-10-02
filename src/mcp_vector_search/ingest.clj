@@ -1,34 +1,31 @@
 (ns mcp-vector-search.ingest
-  (:require [clojure.java.io :as io]
-            [clojure.string :as str])
-  (:import [java.util.regex Pattern]
-           [java.io File]
-           [dev.langchain4j.data.segment TextSegment]
-           [dev.langchain4j.data.document Metadata]))
-
-(defn- segment->regex
-  "Convert a segment to its regex representation."
-  [{:keys [type value pattern]}]
-  (case type
-    :literal (Pattern/quote value)
-    :glob (case pattern
-            "**" ".*?"
-            "*" "[^/]*")
-    :capture (str "(?<" (:name (meta {::capture pattern})) ">" pattern ")")))
+  (:require
+   [clojure.java.io :as io]
+   [clojure.string :as str])
+  (:import
+   (dev.langchain4j.data.document
+    Metadata)
+   (dev.langchain4j.data.segment
+    TextSegment)
+   (java.io
+    File)
+   (java.util.regex
+    Pattern)))
 
 (defn- build-pattern
   "Build a regex pattern from segments with named groups."
   [segments]
-  (let [pattern-str (str/join
-                      (map-indexed
-                        (fn [idx {:keys [type] :as segment}]
-                          (case type
-                            :literal (Pattern/quote (:value segment))
-                            :glob (case (:pattern segment)
-                                    "**" ".*?"
-                                    "*" "[^/]*")
-                            :capture (str "(?<" (:name segment) ">" (:pattern segment) ")")))
-                        segments))]
+  (let [pattern-str
+        (str/join
+         (map-indexed
+          (fn [idx {:keys [type] :as segment}]
+            (case type
+              :literal (Pattern/quote (:value segment))
+              :glob    (case (:pattern segment)
+                         "**" ".*?"
+                         "*"  "[^/]*")
+              :capture (str "(?<" (:name segment) ">" (:pattern segment) ")")))
+          segments))]
     (Pattern/compile pattern-str)))
 
 (defn- extract-captures
@@ -66,33 +63,33 @@
   - :captures - map of captured values
   - :metadata - merged base metadata and captures"
   [{:keys [segments base-path base-metadata]}]
-  (let [pattern (build-pattern segments)
+  (let [pattern   (build-pattern segments)
         base-file (io/file base-path)]
     (if (.isFile base-file)
       ;; Literal file path
       (let [path (.getPath base-file)]
         (when (re-matches pattern path)
-          [{:file base-file
-            :path path
+          [{:file     base-file
+            :path     path
             :captures {}
             :metadata (or base-metadata {})}]))
       ;; Directory - walk and match
       (let [files (if (.isDirectory base-file)
-                   (filter #(.isFile ^File %) (walk-files base-file))
-                   [])]
+                    (filter #(.isFile ^File %) (walk-files base-file))
+                    [])]
         (into []
-          (keep (fn [^File file]
-                  (let [path (.getPath file)
-                        matcher (re-matcher pattern path)]
-                    (when (.matches matcher)
-                      (let [captures (extract-captures matcher segments)]
-                        {:file file
-                         :path path
-                         :captures captures
-                         :metadata (merge base-metadata captures)}))))
-                files))))))
+              (keep (fn [^File file]
+                      (let [path    (.getPath file)
+                            matcher (re-matcher pattern path)]
+                        (when (.matches matcher)
+                          (let [captures (extract-captures matcher segments)]
+                            {:file     file
+                             :path     path
+                             :captures captures
+                             :metadata (merge base-metadata captures)}))))
+                    files))))))
 
-;;; Ingestion
+;; Ingestion
 
 (defn- record-metadata-values
   "Record metadata field values in the system's metadata-values atom.
@@ -108,18 +105,21 @@
 (defn- ingest-file
   "Ingest a single file into the embedding store.
 
-  Takes a system map with :embedding-model, :embedding-store, and :metadata-values,
-  and a file map from files-from-path-spec with :file, :path, and :metadata keys.
+  Takes a system map with :embedding-model, :embedding-store,
+  and :metadata-values, and a file map from files-from-path-spec
+  with :file, :path, and :metadata keys.
 
-  Returns the file map on success, or the file map with an :error key on failure."
-  [{:keys [embedding-model embedding-store metadata-values]} {:keys [file path metadata] :as file-map}]
+  Returns the file map on success, or the file map with an :error key on
+  failure."
+  [{:keys [embedding-model embedding-store metadata-values]}
+   {:keys [file path metadata] :as file-map}]
   (try
-    (let [content (slurp file)
+    (let [content         (slurp file)
           string-metadata (into {} (map (fn [[k v]] [(name k) v]) metadata))
-          lc4j-metadata (Metadata/from string-metadata)
-          segment (TextSegment/from content lc4j-metadata)
-          response (.embed embedding-model segment)
-          embedding (.content response)]
+          lc4j-metadata   (Metadata/from string-metadata)
+          segment         (TextSegment/from content lc4j-metadata)
+          response        (.embed embedding-model segment)
+          embedding       (.content response)]
       (.add embedding-store embedding segment)
       (when metadata-values
         (record-metadata-values metadata-values metadata))
@@ -143,10 +143,10 @@
 (defn ingest
   "Ingest documents into the vector search system.
 
-  Takes a system map with :embedding-model and :embedding-store, and a parsed-config
-  map with :path-specs (a sequence of path spec maps).
+  Takes a system map with :embedding-model and :embedding-store, and a
+  parsed-config map with :path-specs (a sequence of path spec maps).
 
   Returns ingestion statistics map with :ingested, :failed, and :failures."
-  [system {:keys [path-specs] :as parsed-config}]
+  [system {:keys [path-specs] :as _parsed-config}]
   (let [all-files (mapcat files-from-path-spec path-specs)]
     (ingest-files system all-files)))

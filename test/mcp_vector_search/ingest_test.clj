@@ -1,9 +1,13 @@
 (ns mcp-vector-search.ingest-test
-  (:require [clojure.test :refer [deftest testing is]]
-            [mcp-vector-search.ingest :as sut]
-            [clojure.java.io :as io])
-  (:import [dev.langchain4j.model.embedding.onnx.allminilml6v2 AllMiniLmL6V2EmbeddingModel]
-           [dev.langchain4j.store.embedding.inmemory InMemoryEmbeddingStore]))
+  (:require
+    [clojure.java.io :as io]
+    [clojure.test :refer [deftest testing is]]
+    [mcp-vector-search.ingest :as sut])
+  (:import
+    (dev.langchain4j.model.embedding.onnx.allminilml6v2
+      AllMiniLmL6V2EmbeddingModel)
+    (dev.langchain4j.store.embedding.inmemory
+      InMemoryEmbeddingStore)))
 
 (deftest files-from-path-spec-test
   ;; Test file matching and metadata capture from path specifications
@@ -16,8 +20,8 @@
         (spit test-file "content")
         (try
           (let [path-spec {:segments [{:type :literal
-                                      :value (.getPath test-file)}]
-                          :base-path (.getPath test-file)}
+                                       :value (.getPath test-file)}]
+                           :base-path (.getPath test-file)}
                 results (sut/files-from-path-spec path-spec)]
             (is (= 1 (count results)))
             (is (= (.getPath test-file) (:path (first results))))
@@ -37,10 +41,10 @@
         (spit file3 "other")
         (try
           (let [path-spec {:segments [{:type :literal :value (.getPath test-dir)}
-                                     {:type :literal :value "/"}
-                                     {:type :glob :pattern "*"}
-                                     {:type :literal :value ".md"}]
-                          :base-path (.getPath test-dir)}
+                                      {:type :literal :value "/"}
+                                      {:type :glob :pattern "*"}
+                                      {:type :literal :value ".md"}]
+                           :base-path (.getPath test-dir)}
                 results (sut/files-from-path-spec path-spec)
                 paths (set (map :path results))]
             (is (= 2 (count results)))
@@ -63,10 +67,10 @@
         (spit file2 "nested")
         (try
           (let [path-spec {:segments [{:type :literal :value (.getPath test-dir)}
-                                     {:type :literal :value "/"}
-                                     {:type :glob :pattern "**"}
-                                     {:type :literal :value ".md"}]
-                          :base-path (.getPath test-dir)}
+                                      {:type :literal :value "/"}
+                                      {:type :glob :pattern "**"}
+                                      {:type :literal :value ".md"}]
+                           :base-path (.getPath test-dir)}
                 results (sut/files-from-path-spec path-spec)
                 paths (set (map :path results))]
             (is (= 2 (count results)))
@@ -87,9 +91,9 @@
         (spit file2 "v2")
         (try
           (let [path-spec {:segments [{:type :literal :value (.getPath test-dir)}
-                                     {:type :literal :value "/v"}
-                                     {:type :capture :name "version" :pattern "[0-9.]+"}]
-                          :base-path (.getPath test-dir)}
+                                      {:type :literal :value "/v"}
+                                      {:type :capture :name "version" :pattern "[0-9.]+"}]
+                           :base-path (.getPath test-dir)}
                 results (sut/files-from-path-spec path-spec)
                 by-path (into {} (map (fn [r] [(:path r) r]) results))]
             (is (= 2 (count results)))
@@ -108,14 +112,14 @@
         (spit file1 "content")
         (try
           (let [path-spec {:segments [{:type :literal :value (.getPath test-dir)}
-                                     {:type :literal :value "/"}
-                                     {:type :capture :name "lang" :pattern "[^/]+"}
-                                     {:type :literal :value "/"}
-                                     {:type :capture :name "ver" :pattern "v[0-9]+"}
-                                     {:type :literal :value "-"}
-                                     {:type :capture :name "topic" :pattern "[^.]+"}
-                                     {:type :literal :value ".md"}]
-                          :base-path (.getPath test-dir)}
+                                      {:type :literal :value "/"}
+                                      {:type :capture :name "lang" :pattern "[^/]+"}
+                                      {:type :literal :value "/"}
+                                      {:type :capture :name "ver" :pattern "v[0-9]+"}
+                                      {:type :literal :value "-"}
+                                      {:type :capture :name "topic" :pattern "[^.]+"}
+                                      {:type :literal :value ".md"}]
+                           :base-path (.getPath test-dir)}
                 results (sut/files-from-path-spec path-spec)]
             (is (= 1 (count results)))
             (is (= "clj" (get-in results [0 :captures :lang])))
@@ -138,14 +142,14 @@
         (spit file2 "tutorial")
         (try
           (let [path-spec {:segments [{:type :literal :value (.getPath test-dir)}
-                                     {:type :literal :value "/"}
-                                     {:type :capture :name "version" :pattern "v[0-9]+"}
-                                     {:type :literal :value "/"}
-                                     {:type :glob :pattern "**"}
-                                     {:type :literal :value "/"}
-                                     {:type :capture :name "doc" :pattern "[^.]+"}
-                                     {:type :literal :value ".md"}]
-                          :base-path (.getPath test-dir)}
+                                      {:type :literal :value "/"}
+                                      {:type :capture :name "version" :pattern "v[0-9]+"}
+                                      {:type :literal :value "/"}
+                                      {:type :glob :pattern "**"}
+                                      {:type :literal :value "/"}
+                                      {:type :capture :name "doc" :pattern "[^.]+"}
+                                      {:type :literal :value ".md"}]
+                           :base-path (.getPath test-dir)}
                 results (sut/files-from-path-spec path-spec)
                 by-path (into {} (map (fn [r] [(:path r) r]) results))]
             (is (= 2 (count results)))
@@ -167,11 +171,11 @@
         (spit file1 "data")
         (try
           (let [path-spec {:segments [{:type :literal :value (.getPath test-dir)}
-                                     {:type :literal :value "/"}
-                                     {:type :capture :name "version" :pattern "v[0-9]+"}
-                                     {:type :literal :value ".txt"}]
-                          :base-path (.getPath test-dir)
-                          :base-metadata {:source "docs" :type "guide"}}
+                                      {:type :literal :value "/"}
+                                      {:type :capture :name "version" :pattern "v[0-9]+"}
+                                      {:type :literal :value ".txt"}]
+                           :base-path (.getPath test-dir)
+                           :base-metadata {:source "docs" :type "guide"}}
                 results (sut/files-from-path-spec path-spec)]
             (is (= 1 (count results)))
             (is (= {:source "docs" :type "guide" :version "v1"}
@@ -185,8 +189,8 @@
         (.mkdirs test-dir)
         (try
           (let [path-spec {:segments [{:type :literal :value (.getPath test-dir)}
-                                     {:type :literal :value "/nonexistent.md"}]
-                          :base-path (.getPath test-dir)}
+                                      {:type :literal :value "/nonexistent.md"}]
+                           :base-path (.getPath test-dir)}
                 results (sut/files-from-path-spec path-spec)]
             (is (empty? results)))
           (finally
@@ -205,8 +209,8 @@
           (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
                         :embedding-store (InMemoryEmbeddingStore.)}
                 file-maps [{:file test-file
-                           :path (.getPath test-file)
-                           :metadata {:source "test"}}]
+                            :path (.getPath test-file)
+                            :metadata {:source "test"}}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= 0 (:failed result)))
@@ -226,11 +230,11 @@
           (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
                         :embedding-store (InMemoryEmbeddingStore.)}
                 file-maps [{:file file1
-                           :path (.getPath file1)
-                           :metadata {:version "v1"}}
-                          {:file file2
-                           :path (.getPath file2)
-                           :metadata {:version "v2"}}]
+                            :path (.getPath file1)
+                            :metadata {:version "v1"}}
+                           {:file file2
+                            :path (.getPath file2)
+                            :metadata {:version "v2"}}]
                 result (sut/ingest-files system file-maps)]
             (is (= 2 (:ingested result)))
             (is (= 0 (:failed result))))
@@ -244,8 +248,8 @@
                     :embedding-store (InMemoryEmbeddingStore.)}
             nonexistent-file (io/file "nonexistent.txt")
             file-maps [{:file nonexistent-file
-                       :path (.getPath nonexistent-file)
-                       :metadata {}}]
+                        :path (.getPath nonexistent-file)
+                        :metadata {}}]
             result (sut/ingest-files system file-maps)]
         (is (= 0 (:ingested result)))
         (is (= 1 (:failed result)))
@@ -268,9 +272,9 @@
                         :embedding-store (InMemoryEmbeddingStore.)}
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath test-dir)}
-                                    {:type :literal :value "/"}
-                                    {:type :capture :name "version" :pattern "v[0-9]+"}
-                                    {:type :literal :value ".md"}]
+                                     {:type :literal :value "/"}
+                                     {:type :capture :name "version" :pattern "v[0-9]+"}
+                                     {:type :literal :value ".md"}]
                           :base-path (.getPath test-dir)
                           :base-metadata {:type "doc"}}]}
                 result (sut/ingest system config)]
@@ -315,7 +319,7 @@
                         :embedding-store (InMemoryEmbeddingStore.)}
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath test-dir)}
-                                    {:type :literal :value "/nonexistent.txt"}]
+                                     {:type :literal :value "/nonexistent.txt"}]
                           :base-path (.getPath test-dir)}]}
                 result (sut/ingest system config)]
             (is (= 0 (:ingested result)))
@@ -343,10 +347,10 @@
                         :metadata-values metadata-values}
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath test-dir)}
-                                    {:type :literal :value "/"}
-                                    {:type :capture :name "version" :pattern "v[0-9]+"}
-                                    {:type :glob :pattern "*"}
-                                    {:type :literal :value ".md"}]
+                                     {:type :literal :value "/"}
+                                     {:type :capture :name "version" :pattern "v[0-9]+"}
+                                     {:type :glob :pattern "*"}
+                                     {:type :literal :value ".md"}]
                           :base-path (.getPath test-dir)
                           :base-metadata {:type "doc"}}]}
                 result (sut/ingest system config)]

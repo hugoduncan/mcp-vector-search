@@ -1,6 +1,9 @@
 (ns mcp-vector-search.lifecycle
-  (:import [dev.langchain4j.model.embedding.onnx.allminilml6v2 AllMiniLmL6V2EmbeddingModel]
-           [dev.langchain4j.store.embedding.inmemory InMemoryEmbeddingStore]))
+  (:import
+    (dev.langchain4j.model.embedding.onnx.allminilml6v2
+      AllMiniLmL6V2EmbeddingModel)
+    (dev.langchain4j.store.embedding.inmemory
+      InMemoryEmbeddingStore)))
 
 (defonce system (atom nil))
 

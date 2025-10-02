@@ -1,9 +1,13 @@
 (ns mcp-vector-search.config
-  (:require [clojure.edn :as edn]
-            [clojure.java.io :as io]
-            [clojure.string :as str])
   (:refer-clojure :exclude [read])
-  (:import [java.util.regex Pattern PatternSyntaxException]))
+  (:require
+    [clojure.edn :as edn]
+    [clojure.java.io :as io]
+    [clojure.string :as str])
+  (:import
+    (java.util.regex
+      Pattern
+      PatternSyntaxException)))
 
 (def default-search-description
   "Default description for the search tool"
@@ -23,39 +27,48 @@
   Returns a vector of segment maps with :type and type-specific keys."
   [path-str]
   (loop [remaining path-str
-         segments []]
+         segments  []]
     (if (empty? remaining)
       segments
       (cond
         ;; Named capture: (?<name>pattern)
         (str/starts-with? remaining "(?<")
-        (let [name-end (.indexOf remaining ">")
-              close-paren (.indexOf remaining ")")
-              _ (when (= -1 name-end)
-                  (throw (ex-info "Malformed capture: missing '>' in name"
-                                  {:path path-str :position (count (str/join segments))})))
-              _ (when (= -1 close-paren)
-                  (throw (ex-info "Malformed capture: missing closing ')'"
-                                  {:path path-str :position (count (str/join segments))})))
-              name-part (subs remaining 3 name-end)
-              _ (when (str/blank? name-part)
-                  (throw (ex-info "Malformed capture: missing capture name"
-                                  {:path path-str :position (count (str/join segments))})))
+        (let [name-end     (.indexOf remaining ">")
+              close-paren  (.indexOf remaining ")")
+              _            (when (= -1 name-end)
+                             (throw
+                              (ex-info
+                               "Malformed capture: missing '>' in name"
+                               {:path     path-str
+                                :position (count (str/join segments))})))
+              _            (when (= -1 close-paren)
+                             (throw
+                              (ex-info
+                               "Malformed capture: missing closing ')'"
+                               {:path     path-str
+                                :position (count (str/join segments))})))
+              name-part    (subs remaining 3 name-end)
+              _            (when (str/blank? name-part)
+                             (throw
+                              (ex-info
+                               "Malformed capture: missing capture name"
+                               {:path     path-str
+                                :position (count (str/join segments))})))
               pattern-part (subs remaining (inc name-end) close-paren)
               ;; Validate regex pattern
-              _ (try
-                  (Pattern/compile pattern-part)
-                  (catch PatternSyntaxException e
-                    (throw (ex-info "Invalid regex in capture"
-                                    {:path path-str
-                                     :capture-name name-part
-                                     :pattern pattern-part
-                                     :cause (.getMessage e)}
-                                    e))))]
+              _            (try
+                             (Pattern/compile pattern-part)
+                             (catch PatternSyntaxException e
+                               (throw (ex-info "Invalid regex in capture"
+                                               {:path         path-str
+                                                :capture-name name-part
+                                                :pattern      pattern-part
+                                                :cause        (.getMessage e)}
+                                               e))))]
           (recur (subs remaining (inc close-paren))
-                 (conj segments {:type :capture
-                                :name name-part
-                                :pattern pattern-part})))
+                 (conj segments {:type    :capture
+                                 :name    name-part
+                                 :pattern pattern-part})))
 
         ;; Recursive glob: **
         (str/starts-with? remaining "**")
@@ -69,18 +82,19 @@
 
         ;; Literal text - collect until next special
         :else
-        (let [indices (keep #(let [idx (.indexOf remaining %)]
-                              (when (>= idx 0) idx))
-                            ["(?<" "**" "*"])
+        (let [indices      (keep #(let [idx (.indexOf remaining %)]
+                                    (when (>= idx 0) idx))
+                                 ["(?<" "**" "*"])
               next-special (when (seq indices) (apply min indices))
-              literal-len (or next-special (count remaining))
-              literal (subs remaining 0 literal-len)]
+              literal-len  (or next-special (count remaining))
+              literal      (subs remaining 0 literal-len)]
           (recur (subs remaining literal-len)
                  (conj segments {:type :literal :value literal})))))))
 
 (defn- calculate-base-path
   "Calculate the base path from segments.
-  Returns the concatenation of literal segments from the start until the first non-literal."
+  Returns the concatenation of literal segments from the start until the
+  first non-literal."
   [segments]
   (let [prefix-literals (take-while #(= :literal (:type %)) segments)]
     (str/join (map :value prefix-literals))))
@@ -105,7 +119,9 @@
 (defn process-config
   "Process user config into internal format.
 
-  Converts :sources (with raw :path strings) to :path-specs (with parsed segments).
+  Converts :sources (with raw :path strings) to :path-specs (with parsed
+  segments).
+
   Each source entry should have:
   - :path - raw path spec string
   - :name (optional) - source name

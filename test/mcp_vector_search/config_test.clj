@@ -1,7 +1,8 @@
 (ns mcp-vector-search.config-test
-  (:require [clojure.test :refer [deftest testing is]]
-            [mcp-vector-search.config :as sut]
-            [clojure.java.io :as io]))
+  (:require
+    [clojure.java.io :as io]
+    [clojure.test :refer [deftest testing is]]
+    [mcp-vector-search.config :as sut]))
 
 (deftest read-test
   ;; Test reading EDN configuration files

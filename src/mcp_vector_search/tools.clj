@@ -1,8 +1,13 @@
 (ns mcp-vector-search.tools
-  (:require [clojure.data.json :as json])
-  (:import [dev.langchain4j.store.embedding EmbeddingSearchRequest]
-           [dev.langchain4j.store.embedding.filter Filter]
-           [dev.langchain4j.store.embedding.filter.comparison IsEqualTo]))
+  (:require
+    [clojure.data.json :as json])
+  (:import
+    (dev.langchain4j.store.embedding
+      EmbeddingSearchRequest)
+    (dev.langchain4j.store.embedding.filter
+      Filter)
+    (dev.langchain4j.store.embedding.filter.comparison
+      IsEqualTo)))
 
 (defn- embed-query
   "Embed a query string using the embedding model.
@@ -19,8 +24,8 @@
   [metadata-map]
   (when (seq metadata-map)
     (let [filters (map (fn [[k v]]
-                        (IsEqualTo. (name k) v))
-                      metadata-map)]
+                         (IsEqualTo. (name k) v))
+                       metadata-map)]
       (reduce #(Filter/and %1 %2) filters))))
 
 (defn- search-documents
@@ -64,39 +69,53 @@
        :properties (into {}
                          (map (fn [[k values]]
                                 [(name k) {:type "string"
-                                          :enum (vec (sort values))}])
+                                           :enum (vec (sort values))}])
                               metadata-values))
        :additionalProperties false})))
 
 (defn search-tool
   "Create a search tool specification for the MCP server.
-  Takes a system map with :embedding-model, :embedding-store, and :metadata-values.
+
+  Takes a system map with :embedding-model, :embedding-store,
+  and :metadata-values.
+
   Takes a config map with :description for the tool description.
   Returns a tool specification map."
   [system config]
   (let [metadata-schema (build-metadata-schema (:metadata-values system))]
-    {:name "search"
-     :description (:description config)
-     :inputSchema {:type "object"
-                   :properties {"query" {:type "string"
-                                         :description "The search query"}
-                                "limit" {:type "number"
-                                         :description "Maximum number of results to return"
-                                         :default 10}
-                                "metadata" metadata-schema}
-                   :required ["query"]}
+    {:name           "search"
+     :description    (:description config)
+     :inputSchema    {:type     "object"
+                      :properties
+                      {"query"    {:type        "string"
+                                   :description "The search query"}
+                       "limit"
+                       {:type        "number"
+                        :description "Maximum number of results to return"
+                        :default     10}
+                       "metadata" metadata-schema}
+                      :required ["query"]}
      :implementation (fn [{:keys [query limit metadata]}]
                        (try
-                         (let [{:keys [embedding-model embedding-store]} system
-                               max-results (or limit 10)
-                               query-embedding (embed-query embedding-model query)
+                         (let [{:keys [embedding-model embedding-store]}
+                               system
+                               max-results     (or limit 10)
+                               query-embedding (embed-query
+                                                embedding-model
+                                                query)
                                metadata-filter (build-metadata-filter metadata)
-                               matches (search-documents embedding-store query-embedding max-results metadata-filter)
-                               results-json (format-search-results matches)]
+                               matches         (search-documents
+                                                embedding-store
+                                                query-embedding
+                                                max-results
+                                                metadata-filter)
+                               results-json    (format-search-results matches)]
                            {:content [{:type "text"
                                        :text results-json}]
                             :isError false})
                          (catch Exception e
                            {:content [{:type "text"
-                                       :text (str "Search error: " (.getMessage e))}]
+                                       :text (str
+                                              "Search error: "
+                                              (.getMessage e))}]
                             :isError true})))}))

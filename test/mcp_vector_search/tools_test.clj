@@ -1,11 +1,17 @@
 (ns mcp-vector-search.tools-test
-  (:require [clojure.test :refer [deftest testing is]]
-            [clojure.data.json :as json]
-            [mcp-vector-search.tools :as sut])
-  (:import [dev.langchain4j.model.embedding.onnx.allminilml6v2 AllMiniLmL6V2EmbeddingModel]
-           [dev.langchain4j.store.embedding.inmemory InMemoryEmbeddingStore]
-           [dev.langchain4j.data.segment TextSegment]
-           [dev.langchain4j.data.document Metadata]))
+  (:require
+    [clojure.data.json :as json]
+    [clojure.test :refer [deftest testing is]]
+    [mcp-vector-search.tools :as sut])
+  (:import
+    (dev.langchain4j.data.document
+      Metadata)
+    (dev.langchain4j.data.segment
+      TextSegment)
+    (dev.langchain4j.model.embedding.onnx.allminilml6v2
+      AllMiniLmL6V2EmbeddingModel)
+    (dev.langchain4j.store.embedding.inmemory
+      InMemoryEmbeddingStore)))
 
 (deftest search-tool-test
   ;; Test search tool specification and implementation with actual embeddings
@@ -138,8 +144,8 @@
                 parsed-results (json/read-str content-text)]
             (is (= 2 (count parsed-results)))
             (is (every? #(or (= doc1 (get % "content"))
-                            (= doc3 (get % "content")))
-                       parsed-results))))))
+                             (= doc3 (get % "content")))
+                        parsed-results))))))
 
     (testing "filters by multiple metadata fields"
       (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
@@ -179,7 +185,7 @@
 
     (testing "generates schema with enum constraints for discovered metadata"
       (let [metadata-values (atom {:category #{"ai" "ml"}
-                                    :author #{"alice" "bob"}})
+                                   :author #{"alice" "bob"}})
             system {:embedding-model :mock-model
                     :embedding-store :mock-store
                     :metadata-values metadata-values}
