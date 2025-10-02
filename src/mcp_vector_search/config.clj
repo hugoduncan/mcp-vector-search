@@ -37,23 +37,23 @@
               close-paren  (.indexOf remaining ")")
               _            (when (= -1 name-end)
                              (throw
-                              (ex-info
-                               "Malformed capture: missing '>' in name"
-                               {:path     path-str
-                                :position (count (str/join segments))})))
+                               (ex-info
+                                 "Malformed capture: missing '>' in name"
+                                 {:path     path-str
+                                  :position (count (str/join segments))})))
               _            (when (= -1 close-paren)
                              (throw
-                              (ex-info
-                               "Malformed capture: missing closing ')'"
-                               {:path     path-str
-                                :position (count (str/join segments))})))
+                               (ex-info
+                                 "Malformed capture: missing closing ')'"
+                                 {:path     path-str
+                                  :position (count (str/join segments))})))
               name-part    (subs remaining 3 name-end)
               _            (when (str/blank? name-part)
                              (throw
-                              (ex-info
-                               "Malformed capture: missing capture name"
-                               {:path     path-str
-                                :position (count (str/join segments))})))
+                               (ex-info
+                                 "Malformed capture: missing capture name"
+                                 {:path     path-str
+                                  :position (count (str/join segments))})))
               pattern-part (subs remaining (inc name-end) close-paren)
               ;; Validate regex pattern
               _            (try
@@ -130,7 +130,7 @@
   Adds :description with default if not provided.
 
   Returns a config map with :path-specs ready for ingestion."
-  [{:keys [sources description] :as config}]
+  [{:keys [sources description] :as _config}]
   (cond-> {}
     sources (assoc :path-specs
                    (mapv (fn [{:keys [path name] :as source}]

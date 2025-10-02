@@ -1,31 +1,31 @@
 (ns mcp-vector-search.ingest
   (:require
-   [clojure.java.io :as io]
-   [clojure.string :as str])
+    [clojure.java.io :as io]
+    [clojure.string :as str])
   (:import
-   (dev.langchain4j.data.document
-    Metadata)
-   (dev.langchain4j.data.segment
-    TextSegment)
-   (java.io
-    File)
-   (java.util.regex
-    Pattern)))
+    (dev.langchain4j.data.document
+      Metadata)
+    (dev.langchain4j.data.segment
+      TextSegment)
+    (java.io
+      File)
+    (java.util.regex
+      Pattern)))
 
 (defn- build-pattern
   "Build a regex pattern from segments with named groups."
   [segments]
   (let [pattern-str
         (str/join
-         (map-indexed
-          (fn [idx {:keys [type] :as segment}]
-            (case type
-              :literal (Pattern/quote (:value segment))
-              :glob    (case (:pattern segment)
-                         "**" ".*?"
-                         "*"  "[^/]*")
-              :capture (str "(?<" (:name segment) ">" (:pattern segment) ")")))
-          segments))]
+          (mapv
+            (fn [{:keys [type] :as segment}]
+              (case type
+                :literal (Pattern/quote (:value segment))
+                :glob    (case (:pattern segment)
+                           "**" ".*?"
+                           "*"  "[^/]*")
+                :capture (str "(?<" (:name segment) ">" (:pattern segment) ")")))
+            segments))]
     (Pattern/compile pattern-str)))
 
 (defn- extract-captures
@@ -112,7 +112,7 @@
   Returns the file map on success, or the file map with an :error key on
   failure."
   [{:keys [embedding-model embedding-store metadata-values]}
-   {:keys [file path metadata] :as file-map}]
+   {:keys [file metadata] :as file-map}]
   (try
     (let [content         (slurp file)
           string-metadata (into {} (map (fn [[k v]] [(name k) v]) metadata))

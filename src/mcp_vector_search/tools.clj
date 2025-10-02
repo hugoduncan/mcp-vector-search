@@ -101,14 +101,14 @@
                                system
                                max-results     (or limit 10)
                                query-embedding (embed-query
-                                                embedding-model
-                                                query)
+                                                 embedding-model
+                                                 query)
                                metadata-filter (build-metadata-filter metadata)
                                matches         (search-documents
-                                                embedding-store
-                                                query-embedding
-                                                max-results
-                                                metadata-filter)
+                                                 embedding-store
+                                                 query-embedding
+                                                 max-results
+                                                 metadata-filter)
                                results-json    (format-search-results matches)]
                            {:content [{:type "text"
                                        :text results-json}]
@@ -116,6 +116,6 @@
                          (catch Exception e
                            {:content [{:type "text"
                                        :text (str
-                                              "Search error: "
-                                              (.getMessage e))}]
+                                               "Search error: "
+                                               (.getMessage e))}]
                             :isError true})))}))
