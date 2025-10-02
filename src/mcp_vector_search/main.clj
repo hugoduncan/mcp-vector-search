@@ -12,7 +12,7 @@
 (defn start
   "Start MCP vector search server.
   Takes a config file path or uses default config."
-  [{:keys [config-path] :or {config-path "config.edn"}}]
+  [{:keys [config-path] :or {config-path ".mcp-vector-search/config.edn"}}]
   (try
     (log/info :vector-search-server {:msg "Starting"})
 
