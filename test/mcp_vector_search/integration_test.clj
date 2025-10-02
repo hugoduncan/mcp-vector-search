@@ -114,13 +114,14 @@
         (try
           (let [;; Create directory structure demonstrating all segment types
                 docs-dir (fs/create-dirs (fs/file temp-dir "docs"))
-                v1-dir (fs/create-dirs (fs/file docs-dir "v1"))
-                v2-dir (fs/create-dirs (fs/file docs-dir "v2"))
+                v1-tutorials (fs/create-dirs (fs/file docs-dir "v1" "tutorials"))
+                v1-ref (fs/create-dirs (fs/file docs-dir "v1" "reference"))
+                v2-api (fs/create-dirs (fs/file docs-dir "v2" "api"))
 
                 ;; Create files with different languages and versions
-                file1 (fs/file v1-dir "clj-guide.md")
-                file2 (fs/file v1-dir "java-guide.md")
-                file3 (fs/file v2-dir "clj-guide.md")
+                file1 (fs/file v1-tutorials "clj-guide.md")
+                file2 (fs/file v1-ref "java-guide.md")
+                file3 (fs/file v2-api "clj-guide.md")
 
                 _ (spit file1 "Clojure v1 tutorial")
                 _ (spit file2 "Java v1 reference")
@@ -130,9 +131,11 @@
                 ;; - temp-dir/docs/ (literal)
                 ;; - "(?<version>v[0-9]+)" (capture)
                 ;; - "/" (literal)
-                ;; - "*" (single-level glob)
+                ;; - "**" (recursive glob - matches any subdirectory depth)
+                ;; - "/" (literal)
+                ;; - "*" (single-level glob - matches any filename)
                 ;; - "-guide.md" (literal)
-                path-pattern (str temp-dir "/docs/(?<version>v[0-9]+)/*-guide.md")
+                path-pattern (str temp-dir "/docs/(?<version>v[0-9]+)/**/*-guide.md")
                 user-config {:sources [{:type "guides"
                                         :path path-pattern}]}
 

@@ -69,9 +69,10 @@
 
         ;; Literal text - collect until next special
         :else
-        (let [next-special (some #(when-let [idx (.indexOf remaining %)]
-                                    (when (>= idx 0) idx))
-                                 ["(?<" "**" "*"])
+        (let [indices (keep #(let [idx (.indexOf remaining %)]
+                              (when (>= idx 0) idx))
+                            ["(?<" "**" "*"])
+              next-special (when (seq indices) (apply min indices))
               literal-len (or next-special (count remaining))
               literal (subs remaining 0 literal-len)]
           (recur (subs remaining literal-len)
