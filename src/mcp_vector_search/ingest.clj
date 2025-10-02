@@ -2,7 +2,9 @@
   (:require [clojure.java.io :as io]
             [clojure.string :as str])
   (:import [java.util.regex Pattern]
-           [java.io File]))
+           [java.io File]
+           [dev.langchain4j.data.segment TextSegment]
+           [dev.langchain4j.data.document Metadata]))
 
 (defn- segment->regex
   "Convert a segment to its regex representation."
@@ -90,10 +92,48 @@
                          :metadata (merge base-metadata captures)}))))
                 files))))))
 
+;;; Ingestion
+
+(defn- ingest-file
+  "Ingest a single file into the embedding store.
+
+  Takes a system map with :embedding-model and :embedding-store, and a file map
+  from files-from-path-spec with :file, :path, and :metadata keys.
+
+  Returns the file map on success, or the file map with an :error key on failure."
+  [{:keys [embedding-model embedding-store]} {:keys [file path metadata] :as file-map}]
+  (try
+    (let [content (slurp file)
+          string-metadata (into {} (map (fn [[k v]] [(name k) v]) metadata))
+          lc4j-metadata (Metadata/from string-metadata)
+          segment (TextSegment/from content lc4j-metadata)
+          response (.embed embedding-model segment)
+          embedding (.content response)]
+      (.add embedding-store embedding segment)
+      file-map)
+    (catch Exception e
+      (assoc file-map :error (.getMessage e)))))
+
+(defn ingest-files
+  "Ingest a sequence of files from path-spec results.
+
+  Takes a system map and a sequence of file maps from files-from-path-spec.
+  Returns a map with :ingested count, :failed count, and :failures sequence."
+  [system file-maps]
+  (let [results (map #(ingest-file system %) file-maps)
+        successes (filter (complement :error) results)
+        failures (filter :error results)]
+    {:ingested (count successes)
+     :failed (count failures)
+     :failures failures}))
+
 (defn ingest
   "Ingest documents into the vector search system.
-  Takes a system map and config map.
-  Returns nil."
-  [system config]
-  ;; TODO: Implement document ingestion
-  nil)
+
+  Takes a system map with :embedding-model and :embedding-store, and a config
+  map with :path-specs (a sequence of path spec maps).
+
+  Returns ingestion statistics map with :ingested, :failed, and :failures."
+  [system {:keys [path-specs]}]
+  (let [all-files (mapcat files-from-path-spec path-specs)]
+    (ingest-files system all-files)))

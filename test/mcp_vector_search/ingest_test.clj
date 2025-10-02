@@ -1,7 +1,9 @@
 (ns mcp-vector-search.ingest-test
   (:require [clojure.test :refer [deftest testing is]]
             [mcp-vector-search.ingest :as sut]
-            [clojure.java.io :as io]))
+            [clojure.java.io :as io])
+  (:import [dev.langchain4j.model.embedding.onnx.allminilml6v2 AllMiniLmL6V2EmbeddingModel]
+           [dev.langchain4j.store.embedding.inmemory InMemoryEmbeddingStore]))
 
 (deftest files-from-path-spec-test
   ;; Test file matching and metadata capture from path specifications
@@ -190,12 +192,133 @@
           (finally
             (.delete test-dir)))))))
 
+(deftest ingest-files-test
+  ;; Test ingestion of files with their metadata into the embedding store
+  (testing "ingest-files"
+
+    (testing "ingests single file with metadata"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/ingest")
+            test-file (io/file test-dir "doc.txt")]
+        (.mkdirs test-dir)
+        (spit test-file "test content")
+        (try
+          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)}
+                file-maps [{:file test-file
+                           :path (.getPath test-file)
+                           :metadata {:source "test"}}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 1 (:ingested result)))
+            (is (= 0 (:failed result)))
+            (is (empty? (:failures result))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing "ingests multiple files"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/multi-ingest")
+            file1 (io/file test-dir "doc1.txt")
+            file2 (io/file test-dir "doc2.txt")]
+        (.mkdirs test-dir)
+        (spit file1 "content 1")
+        (spit file2 "content 2")
+        (try
+          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)}
+                file-maps [{:file file1
+                           :path (.getPath file1)
+                           :metadata {:version "v1"}}
+                          {:file file2
+                           :path (.getPath file2)
+                           :metadata {:version "v2"}}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 2 (:ingested result)))
+            (is (= 0 (:failed result))))
+          (finally
+            (.delete file1)
+            (.delete file2)
+            (.delete test-dir)))))
+
+    (testing "handles file read errors"
+      (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                    :embedding-store (InMemoryEmbeddingStore.)}
+            nonexistent-file (io/file "nonexistent.txt")
+            file-maps [{:file nonexistent-file
+                       :path (.getPath nonexistent-file)
+                       :metadata {}}]
+            result (sut/ingest-files system file-maps)]
+        (is (= 0 (:ingested result)))
+        (is (= 1 (:failed result)))
+        (is (= 1 (count (:failures result))))
+        (is (some? (:error (first (:failures result)))))))))
+
 (deftest ingest-test
-  ;; Test document ingestion into the vector search system
+  ;; Test end-to-end ingestion with path specs
   (testing "ingest"
-    (testing "accepts system and config maps"
-      (let [system {:embedding-model :mock-model
-                    :embedding-store :mock-store}
-            config {:sources []}
-            result (sut/ingest system config)]
-        (is (nil? result))))))
+
+    (testing "ingests files from path-specs"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/e2e")
+            file1 (io/file test-dir "v1.md")
+            file2 (io/file test-dir "v2.md")]
+        (.mkdirs test-dir)
+        (spit file1 "version 1")
+        (spit file2 "version 2")
+        (try
+          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)}
+                config {:path-specs
+                        [{:segments [{:type :literal :value (.getPath test-dir)}
+                                    {:type :literal :value "/"}
+                                    {:type :capture :name "version" :pattern "v[0-9]+"}
+                                    {:type :literal :value ".md"}]
+                          :base-path (.getPath test-dir)
+                          :base-metadata {:type "doc"}}]}
+                result (sut/ingest system config)]
+            (is (= 2 (:ingested result)))
+            (is (= 0 (:failed result))))
+          (finally
+            (.delete file1)
+            (.delete file2)
+            (.delete test-dir)))))
+
+    (testing "handles multiple path-specs"
+      (let [test-dir1 (io/file "test/mcp_vector_search/test-resources/ingest_test/multi-spec1")
+            test-dir2 (io/file "test/mcp_vector_search/test-resources/ingest_test/multi-spec2")
+            file1 (io/file test-dir1 "a.txt")
+            file2 (io/file test-dir2 "b.txt")]
+        (.mkdirs test-dir1)
+        (.mkdirs test-dir2)
+        (spit file1 "a")
+        (spit file2 "b")
+        (try
+          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)}
+                config {:path-specs
+                        [{:segments [{:type :literal :value (.getPath file1)}]
+                          :base-path (.getPath file1)}
+                         {:segments [{:type :literal :value (.getPath file2)}]
+                          :base-path (.getPath file2)}]}
+                result (sut/ingest system config)]
+            (is (= 2 (:ingested result)))
+            (is (= 0 (:failed result))))
+          (finally
+            (.delete file1)
+            (.delete file2)
+            (.delete test-dir1)
+            (.delete test-dir2)))))
+
+    (testing "returns empty stats when no files match"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/empty-spec")]
+        (.mkdirs test-dir)
+        (try
+          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)}
+                config {:path-specs
+                        [{:segments [{:type :literal :value (.getPath test-dir)}
+                                    {:type :literal :value "/nonexistent.txt"}]
+                          :base-path (.getPath test-dir)}]}
+                result (sut/ingest system config)]
+            (is (= 0 (:ingested result)))
+            (is (= 0 (:failed result))))
+          (finally
+            (.delete test-dir)))))))
