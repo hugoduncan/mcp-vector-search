@@ -1,6 +1,8 @@
 (ns mcp-vector-search.tools
   (:require [clojure.data.json :as json])
-  (:import [dev.langchain4j.store.embedding EmbeddingSearchRequest]))
+  (:import [dev.langchain4j.store.embedding EmbeddingSearchRequest]
+           [dev.langchain4j.store.embedding.filter Filter]
+           [dev.langchain4j.store.embedding.filter.comparison IsEqualTo]))
 
 (defn- embed-query
   "Embed a query string using the embedding model.
@@ -10,14 +12,29 @@
       (.embed query)
       (.content)))
 
+(defn- build-metadata-filter
+  "Build a metadata filter from a map of key-value pairs.
+  Combines multiple filters with AND logic.
+  Returns nil if metadata-map is empty or nil."
+  [metadata-map]
+  (when (seq metadata-map)
+    (let [filters (map (fn [[k v]]
+                        (IsEqualTo. (name k) v))
+                      metadata-map)]
+      (reduce #(Filter/and %1 %2) filters))))
+
 (defn- search-documents
   "Search the embedding store for similar documents.
+  Optionally filters by metadata.
   Returns a list of EmbeddingMatch objects."
-  [embedding-store query-embedding max-results]
-  (let [request (-> (EmbeddingSearchRequest/builder)
+  [embedding-store query-embedding max-results metadata-filter]
+  (let [builder (-> (EmbeddingSearchRequest/builder)
                     (.queryEmbedding query-embedding)
-                    (.maxResults (int max-results))
-                    (.build))]
+                    (.maxResults (int max-results)))
+        builder (if metadata-filter
+                  (.filter builder metadata-filter)
+                  builder)
+        request (.build builder)]
     (-> embedding-store
         (.search request)
         (.matches))))
@@ -45,14 +62,18 @@
                                        :description "The search query"}
                               "limit" {:type "number"
                                        :description "Maximum number of results to return"
-                                       :default 10}}
+                                       :default 10}
+                              "metadata" {:type "object"
+                                         :description "Metadata filters as key-value pairs to match documents"
+                                         :additionalProperties true}}
                  :required ["query"]}
-   :implementation (fn [{:keys [query limit]}]
+   :implementation (fn [{:keys [query limit metadata]}]
                      (try
                        (let [{:keys [embedding-model embedding-store]} system
                              max-results (or limit 10)
                              query-embedding (embed-query embedding-model query)
-                             matches (search-documents embedding-store query-embedding max-results)
+                             metadata-filter (build-metadata-filter metadata)
+                             matches (search-documents embedding-store query-embedding max-results metadata-filter)
                              results-json (format-search-results matches)]
                          {:content [{:type "text"
                                      :text results-json}]

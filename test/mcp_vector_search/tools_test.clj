@@ -105,4 +105,70 @@
         (is (true? (:isError result)))
         (is (vector? (:content result)))
         (is (string? (-> result :content first :text)))
-        (is (re-find #"(?i)error" (-> result :content first :text)))))))
+        (is (re-find #"(?i)error" (-> result :content first :text)))))
+
+    (testing "filters by metadata"
+      (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
+            embedding-store (InMemoryEmbeddingStore.)
+            system {:embedding-model embedding-model
+                    :embedding-store embedding-store}
+
+            doc1 "AI content"
+            doc2 "ML content"
+            doc3 "Tech content"
+
+            meta1 (Metadata/from {"category" "ai" "author" "alice"})
+            meta2 (Metadata/from {"category" "ml" "author" "bob"})
+            meta3 (Metadata/from {"category" "ai" "author" "bob"})
+
+            seg1 (TextSegment/from doc1 meta1)
+            seg2 (TextSegment/from doc2 meta2)
+            seg3 (TextSegment/from doc3 meta3)]
+
+        (.add embedding-store (.content (.embed embedding-model seg1)) seg1)
+        (.add embedding-store (.content (.embed embedding-model seg2)) seg2)
+        (.add embedding-store (.content (.embed embedding-model seg3)) seg3)
+
+        (let [config {:description "Test search"}
+              tool (sut/search-tool system config)
+              impl (:implementation tool)
+              result (impl {:query "content" :metadata {"category" "ai"}})]
+          (is (false? (:isError result)))
+          (let [content-text (-> result :content first :text)
+                parsed-results (json/read-str content-text)]
+            (is (= 2 (count parsed-results)))
+            (is (every? #(or (= doc1 (get % "content"))
+                            (= doc3 (get % "content")))
+                       parsed-results))))))
+
+    (testing "filters by multiple metadata fields"
+      (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
+            embedding-store (InMemoryEmbeddingStore.)
+            system {:embedding-model embedding-model
+                    :embedding-store embedding-store}
+
+            doc1 "AI article"
+            doc2 "ML paper"
+            doc3 "Tech blog"
+
+            meta1 (Metadata/from {"category" "ai" "author" "alice"})
+            meta2 (Metadata/from {"category" "ml" "author" "bob"})
+            meta3 (Metadata/from {"category" "ai" "author" "bob"})
+
+            seg1 (TextSegment/from doc1 meta1)
+            seg2 (TextSegment/from doc2 meta2)
+            seg3 (TextSegment/from doc3 meta3)]
+
+        (.add embedding-store (.content (.embed embedding-model seg1)) seg1)
+        (.add embedding-store (.content (.embed embedding-model seg2)) seg2)
+        (.add embedding-store (.content (.embed embedding-model seg3)) seg3)
+
+        (let [config {:description "Test search"}
+              tool (sut/search-tool system config)
+              impl (:implementation tool)
+              result (impl {:query "text" :metadata {"category" "ai" "author" "bob"}})]
+          (is (false? (:isError result)))
+          (let [content-text (-> result :content first :text)
+                parsed-results (json/read-str content-text)]
+            (is (= 1 (count parsed-results)))
+            (is (= doc3 (get (first parsed-results) "content")))))))))
