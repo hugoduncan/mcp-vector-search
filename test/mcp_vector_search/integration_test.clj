@@ -107,4 +107,77 @@
                 (is (every? #(re-find #"guide content" (get % "content"))
                             results)))))
           (finally
+            (fs/delete-tree temp-dir)))))
+
+    (testing "uses all path segment types: literal, glob, and capture"
+      (let [temp-dir (fs/create-temp-dir)]
+        (try
+          (let [;; Create directory structure demonstrating all segment types
+                docs-dir (fs/create-dirs (fs/file temp-dir "docs"))
+                v1-dir (fs/create-dirs (fs/file docs-dir "v1"))
+                v2-dir (fs/create-dirs (fs/file docs-dir "v2"))
+
+                ;; Create files with different languages and versions
+                file1 (fs/file v1-dir "clj-guide.md")
+                file2 (fs/file v1-dir "java-guide.md")
+                file3 (fs/file v2-dir "clj-guide.md")
+
+                _ (spit file1 "Clojure v1 tutorial")
+                _ (spit file2 "Java v1 reference")
+                _ (spit file3 "Clojure v2 API guide")
+
+                ;; Path spec combining all segment types:
+                ;; - temp-dir/docs/ (literal)
+                ;; - "(?<version>v[0-9]+)" (capture)
+                ;; - "/" (literal)
+                ;; - "*" (single-level glob)
+                ;; - "-guide.md" (literal)
+                path-pattern (str temp-dir "/docs/(?<version>v[0-9]+)/*-guide.md")
+                user-config {:sources [{:type "guides"
+                                        :path path-pattern}]}
+
+                processed-config (config/process-config user-config)
+
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :metadata-values (atom {})}
+
+                ingest-result (ingest/ingest system processed-config)]
+
+            ;; Verify all matching files were ingested
+            (is (= 3 (:ingested ingest-result)))
+            (is (= 0 (:failed ingest-result)))
+
+            ;; Verify metadata was captured from path segments
+            (is (= #{"v1" "v2"} (:version @(:metadata-values system))))
+            (is (= #{"guides"} (:type @(:metadata-values system))))
+
+            ;; Verify search tool has dynamic schema with captured metadata
+            (let [search-tool (tools/search-tool system processed-config)
+                  metadata-schema (get-in search-tool [:inputSchema :properties "metadata"])]
+
+              ;; Schema should include all discovered metadata fields
+              (is (= #{"version" "type"} (set (keys (:properties metadata-schema)))))
+
+              ;; Each field should have enum constraints with sorted values
+              (is (= ["v1" "v2"] (get-in metadata-schema [:properties "version" :enum])))
+              (is (= ["guides"] (get-in metadata-schema [:properties "type" :enum])))
+
+              ;; Test filtering by captured metadata
+              (let [impl (:implementation search-tool)
+                    v1-result (impl {:query "guide" :metadata {"version" "v1"}})
+                    v1-results (json/read-str (-> v1-result :content first :text))]
+
+                (is (false? (:isError v1-result)))
+                (is (= 2 (count v1-results)))
+                (is (every? #(re-find #"v1" (get % "content")) v1-results))
+
+                ;; Search for v2 guides only
+                (let [v2-result (impl {:query "guide" :metadata {"version" "v2"}})
+                      v2-results (json/read-str (-> v2-result :content first :text))]
+
+                  (is (false? (:isError v2-result)))
+                  (is (= 1 (count v2-results)))
+                  (is (re-find #"v2|API" (get (first v2-results) "content")))))))
+          (finally
             (fs/delete-tree temp-dir)))))))
