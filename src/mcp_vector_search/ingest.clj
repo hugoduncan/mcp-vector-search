@@ -94,14 +94,25 @@
 
 ;;; Ingestion
 
+(defn- record-metadata-values
+  "Record metadata field values in the system's metadata-values atom.
+  Updates the atom to track all distinct values seen for each metadata key."
+  [metadata-values-atom metadata]
+  (swap! metadata-values-atom
+         (fn [current]
+           (reduce (fn [acc [k v]]
+                     (update acc k (fnil conj #{}) v))
+                   current
+                   metadata))))
+
 (defn- ingest-file
   "Ingest a single file into the embedding store.
 
-  Takes a system map with :embedding-model and :embedding-store, and a file map
-  from files-from-path-spec with :file, :path, and :metadata keys.
+  Takes a system map with :embedding-model, :embedding-store, and :metadata-values,
+  and a file map from files-from-path-spec with :file, :path, and :metadata keys.
 
   Returns the file map on success, or the file map with an :error key on failure."
-  [{:keys [embedding-model embedding-store]} {:keys [file path metadata] :as file-map}]
+  [{:keys [embedding-model embedding-store metadata-values]} {:keys [file path metadata] :as file-map}]
   (try
     (let [content (slurp file)
           string-metadata (into {} (map (fn [[k v]] [(name k) v]) metadata))
@@ -110,6 +121,8 @@
           response (.embed embedding-model segment)
           embedding (.content response)]
       (.add embedding-store embedding segment)
+      (when metadata-values
+        (record-metadata-values metadata-values metadata))
       file-map)
     (catch Exception e
       (assoc file-map :error (.getMessage e)))))

@@ -322,3 +322,89 @@
             (is (= 0 (:failed result))))
           (finally
             (.delete test-dir)))))))
+
+(deftest metadata-tracking-test
+  ;; Test tracking of metadata field values during ingestion
+  (testing "metadata tracking"
+
+    (testing "tracks distinct metadata values"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/tracking")
+            file1 (io/file test-dir "v1.md")
+            file2 (io/file test-dir "v2.md")
+            file3 (io/file test-dir "v1-copy.md")]
+        (.mkdirs test-dir)
+        (spit file1 "version 1")
+        (spit file2 "version 2")
+        (spit file3 "version 1 copy")
+        (try
+          (let [metadata-values (atom {})
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :metadata-values metadata-values}
+                config {:path-specs
+                        [{:segments [{:type :literal :value (.getPath test-dir)}
+                                    {:type :literal :value "/"}
+                                    {:type :capture :name "version" :pattern "v[0-9]+"}
+                                    {:type :glob :pattern "*"}
+                                    {:type :literal :value ".md"}]
+                          :base-path (.getPath test-dir)
+                          :base-metadata {:type "doc"}}]}
+                result (sut/ingest system config)]
+            (is (= 3 (:ingested result)))
+            (is (= #{:version :type} (set (keys @metadata-values))))
+            (is (= #{"v1" "v2"} (:version @metadata-values)))
+            (is (= #{"doc"} (:type @metadata-values))))
+          (finally
+            (.delete file1)
+            (.delete file2)
+            (.delete file3)
+            (.delete test-dir)))))
+
+    (testing "accumulates metadata across multiple ingestions"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/accumulate")
+            file1 (io/file test-dir "a.txt")
+            file2 (io/file test-dir "b.txt")]
+        (.mkdirs test-dir)
+        (spit file1 "content a")
+        (spit file2 "content b")
+        (try
+          (let [metadata-values (atom {})
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :metadata-values metadata-values}
+                config1 {:path-specs
+                         [{:segments [{:type :literal :value (.getPath file1)}]
+                           :base-path (.getPath file1)
+                           :base-metadata {:category "type1"}}]}
+                config2 {:path-specs
+                         [{:segments [{:type :literal :value (.getPath file2)}]
+                           :base-path (.getPath file2)
+                           :base-metadata {:category "type2"}}]}]
+            (sut/ingest system config1)
+            (is (= #{"type1"} (:category @metadata-values)))
+            (sut/ingest system config2)
+            (is (= #{"type1" "type2"} (:category @metadata-values))))
+          (finally
+            (.delete file1)
+            (.delete file2)
+            (.delete test-dir)))))
+
+    (testing "handles empty metadata"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/no-meta")
+            file1 (io/file test-dir "doc.txt")]
+        (.mkdirs test-dir)
+        (spit file1 "content")
+        (try
+          (let [metadata-values (atom {})
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :metadata-values metadata-values}
+                config {:path-specs
+                        [{:segments [{:type :literal :value (.getPath file1)}]
+                          :base-path (.getPath file1)}]}
+                result (sut/ingest system config)]
+            (is (= 1 (:ingested result)))
+            (is (= {} @metadata-values)))
+          (finally
+            (.delete file1)
+            (.delete test-dir)))))))

@@ -21,7 +21,8 @@
   (when-not @system
     (reset! system
             {:embedding-model (create-embedding-model)
-             :embedding-store (InMemoryEmbeddingStore.)}))
+             :embedding-store (InMemoryEmbeddingStore.)
+             :metadata-values (atom {})}))
   @system)
 
 (defn stop

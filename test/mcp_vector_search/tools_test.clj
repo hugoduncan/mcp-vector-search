@@ -172,3 +172,47 @@
                 parsed-results (json/read-str content-text)]
             (is (= 1 (count parsed-results)))
             (is (= doc3 (get (first parsed-results) "content")))))))))
+
+(deftest metadata-schema-test
+  ;; Test dynamic metadata schema generation from discovered metadata values
+  (testing "metadata schema generation"
+
+    (testing "generates schema with enum constraints for discovered metadata"
+      (let [metadata-values (atom {:category #{"ai" "ml"}
+                                    :author #{"alice" "bob"}})
+            system {:embedding-model :mock-model
+                    :embedding-store :mock-store
+                    :metadata-values metadata-values}
+            config {:description "Test"}
+            tool (sut/search-tool system config)
+            metadata-schema (get-in tool [:inputSchema :properties "metadata"])]
+        (is (= "object" (:type metadata-schema)))
+        (is (false? (:additionalProperties metadata-schema)))
+        (is (map? (:properties metadata-schema)))
+        (is (= #{"category" "author"} (set (keys (:properties metadata-schema)))))
+        (is (= "string" (get-in metadata-schema [:properties "category" :type])))
+        (is (= ["ai" "ml"] (get-in metadata-schema [:properties "category" :enum])))
+        (is (= "string" (get-in metadata-schema [:properties "author" :type])))
+        (is (= ["alice" "bob"] (get-in metadata-schema [:properties "author" :enum])))))
+
+    (testing "generates empty schema when no metadata discovered"
+      (let [metadata-values (atom {})
+            system {:embedding-model :mock-model
+                    :embedding-store :mock-store
+                    :metadata-values metadata-values}
+            config {:description "Test"}
+            tool (sut/search-tool system config)
+            metadata-schema (get-in tool [:inputSchema :properties "metadata"])]
+        (is (= "object" (:type metadata-schema)))
+        (is (false? (:additionalProperties metadata-schema)))
+        (is (nil? (:properties metadata-schema)))))
+
+    (testing "sorts enum values alphabetically"
+      (let [metadata-values (atom {:priority #{"low" "high" "medium"}})
+            system {:embedding-model :mock-model
+                    :embedding-store :mock-store
+                    :metadata-values metadata-values}
+            config {:description "Test"}
+            tool (sut/search-tool system config)
+            priority-enum (get-in tool [:inputSchema :properties "metadata" :properties "priority" :enum])]
+        (is (= ["high" "low" "medium"] priority-enum))))))

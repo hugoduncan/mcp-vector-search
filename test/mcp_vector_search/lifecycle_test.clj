@@ -25,7 +25,10 @@
           (is (map? result))
           (is (contains? result :embedding-model))
           (is (contains? result :embedding-store))
-          (is (instance? InMemoryEmbeddingStore (:embedding-store result))))
+          (is (contains? result :metadata-values))
+          (is (instance? InMemoryEmbeddingStore (:embedding-store result)))
+          (is (instance? clojure.lang.Atom (:metadata-values result)))
+          (is (= {} @(:metadata-values result))))
         (catch clojure.lang.ExceptionInfo e
           ;; Expected to fail on platforms without proper native library support
           (is (= "Failed to initialize embedding model" (.getMessage e))))))
