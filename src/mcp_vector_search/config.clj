@@ -5,6 +5,10 @@
   (:refer-clojure :exclude [read])
   (:import [java.util.regex Pattern PatternSyntaxException]))
 
+(def default-search-description
+  "Default description for the search tool"
+  "Search indexed documents using semantic similarity")
+
 (defn read
   "Read and parse an EDN configuration file.
   Returns the parsed configuration map."
@@ -106,15 +110,17 @@
   - :name (optional) - source name
   - additional keys become base-metadata
 
+  Adds :description with default if not provided.
+
   Returns a config map with :path-specs ready for ingestion."
-  [{:keys [sources] :as config}]
-  (if sources
-    {:path-specs
-     (mapv (fn [{:keys [path name] :as source}]
-             (let [parsed (parse-path-spec path)
-                   metadata (dissoc source :path :name)]
-               (cond-> parsed
-                 (seq metadata) (assoc :base-metadata metadata)
-                 name (assoc-in [:base-metadata :name] name))))
-           sources)}
-    config))
+  [{:keys [sources description] :as config}]
+  (cond-> {}
+    sources (assoc :path-specs
+                   (mapv (fn [{:keys [path name] :as source}]
+                           (let [parsed (parse-path-spec path)
+                                 metadata (dissoc source :path :name)]
+                             (cond-> parsed
+                               (seq metadata) (assoc :base-metadata metadata)
+                               name (assoc-in [:base-metadata :name] name))))
+                         sources))
+    true (assoc :description (or description default-search-description))))

@@ -12,14 +12,15 @@
           :exclusions  [ai.djl.huggingface/tokenizers]}
          ai.djl.huggingface/tokenizers {:mvn/version "0.28.0"}
 
-         org.slf4j/slf4j-nop {:mvn/version "2.0.17"}
-         org.clojure/clojure {:mvn/version "1.12.3"}
+         org.slf4j/slf4j-nop   {:mvn/version "2.0.17"}
+         org.clojure/clojure   {:mvn/version "1.12.3"}
          org.clojure/data.json {:mvn/version "2.5.1"}}
 
  :aliases
  {:test {:extra-paths ["test"]
          :extra-deps  {lambdaisland/kaocha {:mvn/version "1.91.1392"}
-                       babashka/fs {:mvn/version "0.5.23"}}
-         :jvm-opts    ["--enable-native-access=ALL-UNNAMED"]}
+                       babashka/fs         {:mvn/version "0.5.23"}}
+         :jvm-opts    ["--enable-native-access=ALL-UNNAMED"]
+         :main-opts   ["-m" "kaocha.runner"]}
   :run  {:exec-fn  mcp-vector-search.main/start
          :jvm-opts ["--enable-native-access=ALL-UNNAMED"]}}}

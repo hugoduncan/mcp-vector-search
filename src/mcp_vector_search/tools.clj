@@ -35,10 +35,11 @@
 (defn search-tool
   "Create a search tool specification for the MCP server.
   Takes a system map with :embedding-model and :embedding-store.
+  Takes a config map with :description for the tool description.
   Returns a tool specification map."
-  [system]
+  [system config]
   {:name "search"
-   :description "Search indexed documents using semantic similarity"
+   :description (:description config)
    :inputSchema {:type "object"
                  :properties {"query" {:type "string"
                                        :description "The search query"}

@@ -40,7 +40,7 @@
             (is (= 0 (:failed ingest-result)))
 
             ;; Create search tool and search for sports-related content
-            (let [search-tool (tools/search-tool system)
+            (let [search-tool (tools/search-tool system processed-config)
                   impl (:implementation search-tool)
                   search-result (impl {:query "sports" :limit 2})]
 
@@ -92,7 +92,7 @@
             (is (= 2 (:ingested ingest-result)))
 
             ;; Search should find versioned content
-            (let [search-tool (tools/search-tool system)
+            (let [search-tool (tools/search-tool system processed-config)
                   impl (:implementation search-tool)
                   search-result (impl {:query "guide" :limit 2})]
 

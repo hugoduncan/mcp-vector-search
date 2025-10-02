@@ -110,3 +110,23 @@
 
     (testing "throws on invalid regex in capture"
       (is (thrown? Exception (sut/parse-path-spec "/(?<ver>[[[)/file"))))))
+
+(deftest process-config-test
+  ;; Test processing user config into internal format
+  (testing "process-config"
+
+    (testing "uses default description when not provided"
+      (let [config {:sources [{:path "/docs/*.md"}]}
+            result (sut/process-config config)]
+        (is (= sut/default-search-description (:description result)))))
+
+    (testing "uses custom description when provided"
+      (let [config {:sources [{:path "/docs/*.md"}]
+                    :description "Custom search description"}
+            result (sut/process-config config)]
+        (is (= "Custom search description" (:description result)))))
+
+    (testing "includes description even without sources"
+      (let [config {}
+            result (sut/process-config config)]
+        (is (= sut/default-search-description (:description result)))))))

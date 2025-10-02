@@ -13,10 +13,11 @@
     (testing "returns a valid tool specification"
       (let [system {:embedding-model :mock-model
                     :embedding-store :mock-store}
-            tool (sut/search-tool system)]
+            config {:description "Test description"}
+            tool (sut/search-tool system config)]
         (is (map? tool))
         (is (= "search" (:name tool)))
-        (is (string? (:description tool)))
+        (is (= "Test description" (:description tool)))
         (is (map? (:inputSchema tool)))
         (is (fn? (:implementation tool)))))
 
@@ -38,7 +39,8 @@
         (.add embedding-store (.content (.embed embedding-model seg2)) seg2)
         (.add embedding-store (.content (.embed embedding-model seg3)) seg3)
 
-        (let [tool (sut/search-tool system)
+        (let [config {:description "Test search"}
+              tool (sut/search-tool system config)
               impl (:implementation tool)
               result (impl {:query "sports" :limit 2})]
           (is (map? result))
@@ -68,7 +70,8 @@
                 seg (TextSegment/from text (Metadata/from {}))]
             (.add embedding-store (.content (.embed embedding-model seg)) seg)))
 
-        (let [tool (sut/search-tool system)
+        (let [config {:description "Test search"}
+              tool (sut/search-tool system config)
               impl (:implementation tool)
               result (impl {:query "doc" :limit 3})]
           (is (false? (:isError result)))
@@ -85,7 +88,8 @@
 
         (.add embedding-store (.content (.embed embedding-model seg)) seg)
 
-        (let [tool (sut/search-tool system)
+        (let [config {:description "Test search"}
+              tool (sut/search-tool system config)
               impl (:implementation tool)
               result (impl {:query "test"})]
           (is (false? (:isError result)))
@@ -94,7 +98,8 @@
     (testing "handles errors gracefully"
       (let [system {:embedding-model nil
                     :embedding-store nil}
-            tool (sut/search-tool system)
+            config {:description "Test search"}
+            tool (sut/search-tool system config)
             impl (:implementation tool)
             result (impl {:query "test"})]
         (is (true? (:isError result)))
