@@ -17,9 +17,10 @@
     (log/info :vector-search-server {:msg "Starting"})
 
     (let [system (lifecycle/start)
-          cfg (config/read config-path)]
+          cfg (config/read config-path)
+          parsed-config (config/process-config cfg)]
 
-      (ingest/ingest system cfg)
+      (ingest/ingest system parsed-config)
 
       (let [search-tool (tools/search-tool system)]
         (with-open [server (mcp-server/create-server

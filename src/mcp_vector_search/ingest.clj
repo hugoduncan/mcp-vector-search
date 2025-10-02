@@ -130,10 +130,10 @@
 (defn ingest
   "Ingest documents into the vector search system.
 
-  Takes a system map with :embedding-model and :embedding-store, and a config
+  Takes a system map with :embedding-model and :embedding-store, and a parsed-config
   map with :path-specs (a sequence of path spec maps).
 
   Returns ingestion statistics map with :ingested, :failed, and :failures."
-  [system {:keys [path-specs]}]
+  [system {:keys [path-specs] :as parsed-config}]
   (let [all-files (mapcat files-from-path-spec path-specs)]
     (ingest-files system all-files)))

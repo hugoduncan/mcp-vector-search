@@ -96,3 +96,25 @@
         base-path (calculate-base-path segments)]
     {:segments segments
      :base-path base-path}))
+
+(defn process-config
+  "Process user config into internal format.
+
+  Converts :sources (with raw :path strings) to :path-specs (with parsed segments).
+  Each source entry should have:
+  - :path - raw path spec string
+  - :name (optional) - source name
+  - additional keys become base-metadata
+
+  Returns a config map with :path-specs ready for ingestion."
+  [{:keys [sources] :as config}]
+  (if sources
+    {:path-specs
+     (mapv (fn [{:keys [path name] :as source}]
+             (let [parsed (parse-path-spec path)
+                   metadata (dissoc source :path :name)]
+               (cond-> parsed
+                 (seq metadata) (assoc :base-metadata metadata)
+                 name (assoc-in [:base-metadata :name] name))))
+           sources)}
+    config))

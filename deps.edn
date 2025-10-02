@@ -18,7 +18,8 @@
 
  :aliases
  {:test {:extra-paths ["test"]
-         :extra-deps  {lambdaisland/kaocha {:mvn/version "1.91.1392"}}
+         :extra-deps  {lambdaisland/kaocha {:mvn/version "1.91.1392"}
+                       babashka/fs {:mvn/version "0.5.23"}}
          :jvm-opts    ["--enable-native-access=ALL-UNNAMED"]}
   :run  {:exec-fn  mcp-vector-search.main/start
          :jvm-opts ["--enable-native-access=ALL-UNNAMED"]}}}
