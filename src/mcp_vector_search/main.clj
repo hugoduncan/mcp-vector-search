@@ -9,11 +9,13 @@
     [mcp-vector-search.lifecycle :as lifecycle]
     [mcp-vector-search.tools :as tools]))
 
+(def ^:private default-config-path
+  ".mcp-vector-search/config.edn")
 
 (defn start
   "Start MCP vector search server.
   Takes a config file path or uses default config."
-  [{:keys [config-path] :or {config-path ".mcp-vector-search/config.edn"}}]
+  [{:keys [config-path] :or {config-path default-config-path}}]
   (try
     (log/info :vector-search-server {:msg "Starting"})
 
@@ -40,8 +42,7 @@
       (log/error :vector-search-server {:error (.getMessage e)})
       (System/exit 1))))
 
-
 (defn -main
   "Start MCP vector search server"
   [& args]
-  (start {:config-path (or (first args) "config.edn")}))
+  (start {:config-path (or (first args) default-config-path)}))
