@@ -171,6 +171,17 @@
   [_strategy embedding-store embedding-result]
   (ingest-whole-document embedding-store embedding-result))
 
+(defmethod ingest-segments :file-path
+  [_strategy embedding-store embedding-result]
+  (let [embedding (.content (:embedding-response embedding-result))
+        ;; Get metadata from the original segment (which has all metadata from embedding phase)
+        original-segment (:segment embedding-result)
+        original-metadata (.metadata original-segment)
+        ;; Create new segment with just the path as content, preserving metadata
+        path (:path embedding-result)
+        path-segment (TextSegment/from path original-metadata)]
+    (.add embedding-store embedding path-segment)))
+
 (defn- ingest-file
   "Ingest a single file into the embedding store.
 
@@ -181,13 +192,15 @@
   Returns the file map on success, or the file map with an :error key on
   failure."
   [{:keys [embedding-model embedding-store metadata-values]}
-   {:keys [file metadata embedding ingest] :as file-map}]
+   {:keys [file path metadata embedding ingest] :as file-map}]
   (try
     (let [content         (slurp file)
           embedding-result (embed-content embedding embedding-model content metadata)
           ;; Use enhanced metadata if strategy provided it, otherwise use original
-          final-metadata  (or (:metadata embedding-result) metadata)]
-      (ingest-segments ingest embedding-store embedding-result)
+          final-metadata  (or (:metadata embedding-result) metadata)
+          ;; Add path to embedding-result for ingest strategies that need it
+          embedding-result-with-path (assoc embedding-result :path path)]
+      (ingest-segments ingest embedding-store embedding-result-with-path)
       (when metadata-values
         (record-metadata-values metadata-values final-metadata))
       file-map)

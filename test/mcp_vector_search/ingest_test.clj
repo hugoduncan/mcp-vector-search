@@ -1,8 +1,10 @@
 (ns mcp-vector-search.ingest-test
   (:require
+    [clojure.data.json :as json]
     [clojure.java.io :as io]
     [clojure.test :refer [deftest testing is]]
-    [mcp-vector-search.ingest :as sut])
+    [mcp-vector-search.ingest :as sut]
+    [mcp-vector-search.tools :as tools])
   (:import
     (dev.langchain4j.model.embedding.onnx.allminilml6v2
       AllMiniLmL6V2EmbeddingModel)
@@ -567,4 +569,142 @@
             (is (= #{"lib"} (:type @metadata-values))))
           (finally
             (.delete test-file)
+            (.delete test-dir)))))))
+
+(deftest file-path-ingest-test
+  ;; Test :file-path ingest strategy that stores only file paths instead of full content
+  (testing "file-path ingest strategy"
+
+    (testing "stores only file path as segment content"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/file-path")
+            test-file (io/file test-dir "doc.txt")]
+        (.mkdirs test-dir)
+        (spit test-file "This is the full document content that should not be stored")
+        (try
+          (let [embedding-store (InMemoryEmbeddingStore.)
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store embedding-store}
+                file-maps [{:file test-file
+                            :path (.getPath test-file)
+                            :metadata {:source "test"}
+                            :embedding :whole-document
+                            :ingest :file-path}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 1 (:ingested result)))
+            (is (= 0 (:failed result)))
+            ;; Verify content via search - should return path, not file content
+            (let [search-tool (tools/search-tool system {})
+                  impl (:implementation search-tool)
+                  search-result (impl {:query "document content" :limit 1})
+                  content-text (-> search-result :content first :text)
+                  results (json/read-str content-text)
+                  returned-content (get (first results) "content")]
+              (is (= (.getPath test-file) returned-content))
+              (is (not= "This is the full document content that should not be stored" returned-content))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing "preserves metadata from embedding phase"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/fp-meta")
+            test-file (io/file test-dir "test.txt")]
+        (.mkdirs test-dir)
+        (spit test-file "content")
+        (try
+          (let [metadata-values (atom {})
+                embedding-store (InMemoryEmbeddingStore.)
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store embedding-store
+                        :metadata-values metadata-values}
+                file-maps [{:file test-file
+                            :path (.getPath test-file)
+                            :metadata {:category "docs" :version "v1"}
+                            :embedding :whole-document
+                            :ingest :file-path}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 1 (:ingested result)))
+            (is (= #{"docs"} (:category @metadata-values)))
+            (is (= #{"v1"} (:version @metadata-values)))
+            ;; Verify metadata via search with filter
+            (let [search-tool (tools/search-tool system {})
+                  impl (:implementation search-tool)
+                  search-result (impl {:query "content" :limit 1 :metadata {:category "docs"}})
+                  content-text (-> search-result :content first :text)
+                  results (json/read-str content-text)]
+              (is (= 1 (count results)))
+              (is (= (.getPath test-file) (get (first results) "content")))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing "works with :namespace-doc embedding strategy"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/fp-ns")
+            test-file (io/file test-dir "ns.clj")]
+        (.mkdirs test-dir)
+        (spit test-file "(ns example.core \"Core namespace\")\n(defn foo [] :bar)")
+        (try
+          (let [metadata-values (atom {})
+                embedding-store (InMemoryEmbeddingStore.)
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store embedding-store
+                        :metadata-values metadata-values}
+                file-maps [{:file test-file
+                            :path (.getPath test-file)
+                            :metadata {:type "src"}
+                            :embedding :namespace-doc
+                            :ingest :file-path}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 1 (:ingested result)))
+            ;; Verify namespace metadata was added
+            (is (= #{"example.core"} (:namespace @metadata-values)))
+            ;; Verify returned content is path via search
+            (let [search-tool (tools/search-tool system {})
+                  impl (:implementation search-tool)
+                  search-result (impl {:query "Core namespace" :limit 1})
+                  content-text (-> search-result :content first :text)
+                  results (json/read-str content-text)
+                  returned-content (get (first results) "content")]
+              (is (= (.getPath test-file) returned-content))
+              (is (not= "Core namespace" returned-content))
+              (is (not= "(ns example.core \"Core namespace\")\n(defn foo [] :bar)" returned-content))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing "supports multiple files with different paths"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/fp-multi")
+            file1 (io/file test-dir "doc1.txt")
+            file2 (io/file test-dir "doc2.txt")]
+        (.mkdirs test-dir)
+        (spit file1 "content one")
+        (spit file2 "content two")
+        (try
+          (let [embedding-store (InMemoryEmbeddingStore.)
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store embedding-store}
+                file-maps [{:file file1
+                            :path (.getPath file1)
+                            :metadata {}
+                            :embedding :whole-document
+                            :ingest :file-path}
+                           {:file file2
+                            :path (.getPath file2)
+                            :metadata {}
+                            :embedding :whole-document
+                            :ingest :file-path}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 2 (:ingested result)))
+            ;; Verify both paths are returned via search
+            (let [search-tool (tools/search-tool system {})
+                  impl (:implementation search-tool)
+                  search-result (impl {:query "content" :limit 2})
+                  content-text (-> search-result :content first :text)
+                  results (json/read-str content-text)
+                  paths (set (map #(get % "content") results))]
+              (is (= 2 (count results)))
+              (is (contains? paths (.getPath file1)))
+              (is (contains? paths (.getPath file2)))))
+          (finally
+            (.delete file1)
+            (.delete file2)
             (.delete test-dir)))))))
