@@ -21,11 +21,15 @@
         (try
           (let [path-spec {:segments [{:type :literal
                                        :value (.getPath test-file)}]
-                           :base-path (.getPath test-file)}
+                           :base-path (.getPath test-file)
+                           :embedding :whole-document
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)]
             (is (= 1 (count results)))
             (is (= (.getPath test-file) (:path (first results))))
-            (is (= {} (:captures (first results)))))
+            (is (= {} (:captures (first results))))
+            (is (= :whole-document (:embedding (first results))))
+            (is (= :whole-document (:ingest (first results)))))
           (finally
             (.delete test-file)
             (.delete test-dir)))))
@@ -44,7 +48,9 @@
                                       {:type :literal :value "/"}
                                       {:type :glob :pattern "*"}
                                       {:type :literal :value ".md"}]
-                           :base-path (.getPath test-dir)}
+                           :base-path (.getPath test-dir)
+                           :embedding :whole-document
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)
                 paths (set (map :path results))]
             (is (= 2 (count results)))
@@ -70,7 +76,9 @@
                                       {:type :literal :value "/"}
                                       {:type :glob :pattern "**"}
                                       {:type :literal :value ".md"}]
-                           :base-path (.getPath test-dir)}
+                           :base-path (.getPath test-dir)
+                           :embedding :whole-document
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)
                 paths (set (map :path results))]
             (is (= 2 (count results)))
@@ -93,7 +101,9 @@
           (let [path-spec {:segments [{:type :literal :value (.getPath test-dir)}
                                       {:type :literal :value "/v"}
                                       {:type :capture :name "version" :pattern "[0-9.]+"}]
-                           :base-path (.getPath test-dir)}
+                           :base-path (.getPath test-dir)
+                           :embedding :whole-document
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)
                 by-path (into {} (map (fn [r] [(:path r) r]) results))]
             (is (= 2 (count results)))
@@ -119,7 +129,9 @@
                                       {:type :literal :value "-"}
                                       {:type :capture :name "topic" :pattern "[^.]+"}
                                       {:type :literal :value ".md"}]
-                           :base-path (.getPath test-dir)}
+                           :base-path (.getPath test-dir)
+                           :embedding :whole-document
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)]
             (is (= 1 (count results)))
             (is (= "clj" (get-in results [0 :captures :lang])))
@@ -149,7 +161,9 @@
                                       {:type :literal :value "/"}
                                       {:type :capture :name "doc" :pattern "[^.]+"}
                                       {:type :literal :value ".md"}]
-                           :base-path (.getPath test-dir)}
+                           :base-path (.getPath test-dir)
+                           :embedding :whole-document
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)
                 by-path (into {} (map (fn [r] [(:path r) r]) results))]
             (is (= 2 (count results)))
@@ -175,7 +189,9 @@
                                       {:type :capture :name "version" :pattern "v[0-9]+"}
                                       {:type :literal :value ".txt"}]
                            :base-path (.getPath test-dir)
-                           :base-metadata {:source "docs" :type "guide"}}
+                           :base-metadata {:source "docs" :type "guide"}
+                           :embedding :whole-document
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)]
             (is (= 1 (count results)))
             (is (= {:source "docs" :type "guide" :version "v1"}
@@ -190,7 +206,9 @@
         (try
           (let [path-spec {:segments [{:type :literal :value (.getPath test-dir)}
                                       {:type :literal :value "/nonexistent.md"}]
-                           :base-path (.getPath test-dir)}
+                           :base-path (.getPath test-dir)
+                           :embedding :whole-document
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)]
             (is (empty? results)))
           (finally
@@ -210,7 +228,9 @@
                         :embedding-store (InMemoryEmbeddingStore.)}
                 file-maps [{:file test-file
                             :path (.getPath test-file)
-                            :metadata {:source "test"}}]
+                            :metadata {:source "test"}
+                            :embedding :whole-document
+                            :ingest :whole-document}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= 0 (:failed result)))
@@ -231,10 +251,14 @@
                         :embedding-store (InMemoryEmbeddingStore.)}
                 file-maps [{:file file1
                             :path (.getPath file1)
-                            :metadata {:version "v1"}}
+                            :metadata {:version "v1"}
+                            :embedding :whole-document
+                            :ingest :whole-document}
                            {:file file2
                             :path (.getPath file2)
-                            :metadata {:version "v2"}}]
+                            :metadata {:version "v2"}
+                            :embedding :whole-document
+                            :ingest :whole-document}]
                 result (sut/ingest-files system file-maps)]
             (is (= 2 (:ingested result)))
             (is (= 0 (:failed result))))
@@ -249,7 +273,9 @@
             nonexistent-file (io/file "nonexistent.txt")
             file-maps [{:file nonexistent-file
                         :path (.getPath nonexistent-file)
-                        :metadata {}}]
+                        :metadata {}
+                        :embedding :whole-document
+                        :ingest :whole-document}]
             result (sut/ingest-files system file-maps)]
         (is (= 0 (:ingested result)))
         (is (= 1 (:failed result)))
@@ -276,7 +302,9 @@
                                      {:type :capture :name "version" :pattern "v[0-9]+"}
                                      {:type :literal :value ".md"}]
                           :base-path (.getPath test-dir)
-                          :base-metadata {:type "doc"}}]}
+                          :base-metadata {:type "doc"}
+                          :embedding :whole-document
+                          :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 2 (:ingested result)))
             (is (= 0 (:failed result))))
@@ -299,9 +327,13 @@
                         :embedding-store (InMemoryEmbeddingStore.)}
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath file1)}]
-                          :base-path (.getPath file1)}
+                          :base-path (.getPath file1)
+                          :embedding :whole-document
+                          :ingest :whole-document}
                          {:segments [{:type :literal :value (.getPath file2)}]
-                          :base-path (.getPath file2)}]}
+                          :base-path (.getPath file2)
+                          :embedding :whole-document
+                          :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 2 (:ingested result)))
             (is (= 0 (:failed result))))
@@ -320,7 +352,9 @@
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath test-dir)}
                                      {:type :literal :value "/nonexistent.txt"}]
-                          :base-path (.getPath test-dir)}]}
+                          :base-path (.getPath test-dir)
+                          :embedding :whole-document
+                          :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 0 (:ingested result)))
             (is (= 0 (:failed result))))
@@ -352,7 +386,9 @@
                                      {:type :glob :pattern "*"}
                                      {:type :literal :value ".md"}]
                           :base-path (.getPath test-dir)
-                          :base-metadata {:type "doc"}}]}
+                          :base-metadata {:type "doc"}
+                          :embedding :whole-document
+                          :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 3 (:ingested result)))
             (is (= #{:version :type} (set (keys @metadata-values))))
@@ -379,11 +415,15 @@
                 config1 {:path-specs
                          [{:segments [{:type :literal :value (.getPath file1)}]
                            :base-path (.getPath file1)
-                           :base-metadata {:category "type1"}}]}
+                           :base-metadata {:category "type1"}
+                           :embedding :whole-document
+                           :ingest :whole-document}]}
                 config2 {:path-specs
                          [{:segments [{:type :literal :value (.getPath file2)}]
                            :base-path (.getPath file2)
-                           :base-metadata {:category "type2"}}]}]
+                           :base-metadata {:category "type2"}
+                           :embedding :whole-document
+                           :ingest :whole-document}]}]
             (sut/ingest system config1)
             (is (= #{"type1"} (:category @metadata-values)))
             (sut/ingest system config2)
@@ -405,7 +445,9 @@
                         :metadata-values metadata-values}
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath file1)}]
-                          :base-path (.getPath file1)}]}
+                          :base-path (.getPath file1)
+                          :embedding :whole-document
+                          :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 1 (:ingested result)))
             (is (= {} @metadata-values)))

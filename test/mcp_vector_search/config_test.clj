@@ -150,4 +150,29 @@
     (testing "includes description even without sources"
       (let [config {}
             result (sut/process-config config)]
-        (is (= sut/default-search-description (:description result)))))))
+        (is (= sut/default-search-description (:description result)))))
+
+    (testing "adds default :embedding and :ingest strategies"
+      (let [config {:sources [{:path "/docs/*.md"}]}
+            result (sut/process-config config)]
+        (is (= 1 (count (:path-specs result))))
+        (is (= :whole-document (get-in result [:path-specs 0 :embedding])))
+        (is (= :whole-document (get-in result [:path-specs 0 :ingest])))))
+
+    (testing "preserves explicit :embedding and :ingest strategies"
+      (let [config {:sources [{:path "/docs/*.md"
+                               :embedding :custom-embed
+                               :ingest :custom-ingest}]}
+            result (sut/process-config config)]
+        (is (= :custom-embed (get-in result [:path-specs 0 :embedding])))
+        (is (= :custom-ingest (get-in result [:path-specs 0 :ingest])))))
+
+    (testing ":embedding and :ingest are not included in base-metadata"
+      (let [config {:sources [{:path "/docs/*.md"
+                               :embedding :whole-document
+                               :ingest :whole-document
+                               :category "docs"}]}
+            result (sut/process-config config)]
+        (is (= {:category "docs"} (get-in result [:path-specs 0 :base-metadata])))
+        (is (nil? (get-in result [:path-specs 0 :base-metadata :embedding])))
+        (is (nil? (get-in result [:path-specs 0 :base-metadata :ingest])))))))

@@ -125,19 +125,24 @@
   Each source entry should have:
   - :path - raw path spec string
   - :name (optional) - source name
+  - :embedding (optional) - embedding strategy, defaults to :whole-document
+  - :ingest (optional) - ingest strategy, defaults to :whole-document
   - additional keys become base-metadata
 
   Adds :description with default if not provided.
+  Adds :embedding and :ingest defaults to each path-spec.
 
   Returns a config map with :path-specs ready for ingestion."
   [{:keys [sources description] :as _config}]
   (cond-> {}
     sources (assoc :path-specs
-                   (mapv (fn [{:keys [path name] :as source}]
+                   (mapv (fn [{:keys [path name embedding ingest] :as source}]
                            (let [parsed (parse-path-spec path)
-                                 metadata (dissoc source :path :name)]
+                                 metadata (dissoc source :path :name :embedding :ingest)]
                              (cond-> parsed
                                (seq metadata) (assoc :base-metadata metadata)
-                               name (assoc-in [:base-metadata :name] name))))
+                               name (assoc-in [:base-metadata :name] name)
+                               true (assoc :embedding (or embedding :whole-document))
+                               true (assoc :ingest (or ingest :whole-document)))))
                          sources))
     true (assoc :description (or description default-search-description))))

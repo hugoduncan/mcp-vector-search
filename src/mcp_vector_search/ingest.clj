@@ -56,23 +56,29 @@
   - :segments - parsed segment structure
   - :base-path - starting directory for filesystem walk
   - :base-metadata (optional) - metadata to merge with captures
+  - :embedding - embedding strategy
+  - :ingest - ingest strategy
 
   Returns a sequence of maps:
   - :file - java.io.File object
   - :path - file path string
   - :captures - map of captured values
-  - :metadata - merged base metadata and captures"
-  [{:keys [segments base-path base-metadata]}]
+  - :metadata - merged base metadata and captures
+  - :embedding - embedding strategy
+  - :ingest - ingest strategy"
+  [{:keys [segments base-path base-metadata embedding ingest]}]
   (let [pattern   (build-pattern segments)
         base-file (io/file base-path)]
     (if (.isFile base-file)
       ;; Literal file path
       (let [path (.getPath base-file)]
         (when (re-matches pattern path)
-          [{:file     base-file
-            :path     path
-            :captures {}
-            :metadata (or base-metadata {})}]))
+          [{:file      base-file
+            :path      path
+            :captures  {}
+            :metadata  (or base-metadata {})
+            :embedding embedding
+            :ingest    ingest}]))
       ;; Directory - walk and match
       (let [files (if (.isDirectory base-file)
                     (filter #(.isFile ^File %) (walk-files base-file))
@@ -83,13 +89,15 @@
                             matcher (re-matcher pattern path)]
                         (when (.matches matcher)
                           (let [captures (extract-captures matcher segments)]
-                            {:file     file
-                             :path     path
-                             :captures captures
-                             :metadata (merge base-metadata captures)}))))
+                            {:file      file
+                             :path      path
+                             :captures  captures
+                             :metadata  (merge base-metadata captures)
+                             :embedding embedding
+                             :ingest    ingest}))))
                     files))))))
 
-;; Ingestion
+;; Ingestion strategies
 
 (defn- record-metadata-values
   "Record metadata field values in the system's metadata-values atom.
@@ -102,25 +110,58 @@
                    current
                    metadata))))
 
+(defn- embed-whole-document
+  "Embedding strategy: embed entire document as single segment.
+  Returns map with :embedding-response and :segment."
+  [embedding-model content metadata]
+  (let [string-metadata (into {} (map (fn [[k v]] [(name k) v]) metadata))
+        lc4j-metadata   (Metadata/from string-metadata)
+        segment         (TextSegment/from content lc4j-metadata)
+        response        (.embed embedding-model segment)]
+    {:embedding-response response
+     :segment segment}))
+
+(defn- ingest-whole-document
+  "Ingest strategy: add single embedding to store.
+  Returns nil on success."
+  [embedding-store embedding-result]
+  (let [embedding (.content (:embedding-response embedding-result))
+        segment (:segment embedding-result)]
+    (.add embedding-store embedding segment)))
+
+(defmulti embed-content
+  "Dispatch embedding based on strategy.
+  Returns map with :embedding-response and :segment (or :segments)."
+  (fn [strategy _embedding-model _content _metadata] strategy))
+
+(defmethod embed-content :whole-document
+  [_strategy embedding-model content metadata]
+  (embed-whole-document embedding-model content metadata))
+
+(defmulti ingest-segments
+  "Dispatch ingest based on strategy.
+  Returns nil on success."
+  (fn [strategy _embedding-store _embedding-result] strategy))
+
+(defmethod ingest-segments :whole-document
+  [_strategy embedding-store embedding-result]
+  (ingest-whole-document embedding-store embedding-result))
+
 (defn- ingest-file
   "Ingest a single file into the embedding store.
 
   Takes a system map with :embedding-model, :embedding-store,
   and :metadata-values, and a file map from files-from-path-spec
-  with :file, :path, and :metadata keys.
+  with :file, :path, :metadata, :embedding, and :ingest strategy keys.
 
   Returns the file map on success, or the file map with an :error key on
   failure."
   [{:keys [embedding-model embedding-store metadata-values]}
-   {:keys [file metadata] :as file-map}]
+   {:keys [file metadata embedding ingest] :as file-map}]
   (try
     (let [content         (slurp file)
-          string-metadata (into {} (map (fn [[k v]] [(name k) v]) metadata))
-          lc4j-metadata   (Metadata/from string-metadata)
-          segment         (TextSegment/from content lc4j-metadata)
-          response        (.embed embedding-model segment)
-          embedding       (.content response)]
-      (.add embedding-store embedding segment)
+          embedding-result (embed-content embedding embedding-model content metadata)]
+      (ingest-segments ingest embedding-store embedding-result)
       (when metadata-values
         (record-metadata-values metadata-values metadata))
       file-map)
