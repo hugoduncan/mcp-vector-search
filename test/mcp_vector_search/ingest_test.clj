@@ -454,3 +454,117 @@
           (finally
             (.delete file1)
             (.delete test-dir)))))))
+
+(deftest namespace-doc-embedding-test
+  ;; Test :namespace-doc embedding strategy that embeds namespace docstrings
+  ;; while storing full file content
+  (testing "namespace-doc embedding strategy"
+
+    (testing "ingests Clojure file with namespace docstring"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/ns-doc")
+            test-file (io/file test-dir "with_doc.clj")]
+        (.mkdirs test-dir)
+        (spit test-file "(ns foo.bar \"A namespace\" (:require [clojure.string]))\n(defn f [] :x)")
+        (try
+          (let [metadata-values (atom {})
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :metadata-values metadata-values}
+                file-maps [{:file test-file
+                            :path (.getPath test-file)
+                            :metadata {:source "test"}
+                            :embedding :namespace-doc
+                            :ingest :whole-document}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 1 (:ingested result)))
+            (is (= 0 (:failed result)))
+            (is (= #{"foo.bar"} (:namespace @metadata-values)))
+            (is (= #{"test"} (:source @metadata-values))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing "skips file without namespace docstring"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/ns-no-doc")
+            test-file (io/file test-dir "no_doc.clj")]
+        (.mkdirs test-dir)
+        (spit test-file "(ns foo.baz)\n(defn g [] :y)")
+        (try
+          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)}
+                file-maps [{:file test-file
+                            :path (.getPath test-file)
+                            :metadata {}
+                            :embedding :namespace-doc
+                            :ingest :whole-document}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 0 (:ingested result)))
+            (is (= 1 (:failed result)))
+            (is (= "No namespace docstring found" (:error (first (:failures result))))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing "skips file without ns form"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/no-ns")
+            test-file (io/file test-dir "no_ns.txt")]
+        (.mkdirs test-dir)
+        (spit test-file "just some text")
+        (try
+          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)}
+                file-maps [{:file test-file
+                            :path (.getPath test-file)
+                            :metadata {}
+                            :embedding :namespace-doc
+                            :ingest :whole-document}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 0 (:ingested result)))
+            (is (= 1 (:failed result)))
+            (is (= "No ns form found" (:error (first (:failures result))))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing "skips malformed file"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/malformed")
+            test-file (io/file test-dir "bad.clj")]
+        (.mkdirs test-dir)
+        (spit test-file "this is {{{ malformed [[[")
+        (try
+          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)}
+                file-maps [{:file test-file
+                            :path (.getPath test-file)
+                            :metadata {}
+                            :embedding :namespace-doc
+                            :ingest :whole-document}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 0 (:ingested result)))
+            (is (= 1 (:failed result))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing "adds namespace to metadata"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/ns-meta")
+            test-file (io/file test-dir "meta.clj")]
+        (.mkdirs test-dir)
+        (spit test-file "(ns com.example \"Example NS\")")
+        (try
+          (let [metadata-values (atom {})
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :metadata-values metadata-values}
+                file-maps [{:file test-file
+                            :path (.getPath test-file)
+                            :metadata {:type "lib"}
+                            :embedding :namespace-doc
+                            :ingest :whole-document}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 1 (:ingested result)))
+            (is (= #{"com.example"} (:namespace @metadata-values)))
+            (is (= #{"lib"} (:type @metadata-values))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))))

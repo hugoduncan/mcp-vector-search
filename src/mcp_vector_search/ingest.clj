@@ -1,7 +1,8 @@
 (ns mcp-vector-search.ingest
   (:require
     [clojure.java.io :as io]
-    [clojure.string :as str])
+    [clojure.string :as str]
+    [mcp-vector-search.parse :as parse])
   (:import
     (dev.langchain4j.data.document
       Metadata)
@@ -138,6 +139,29 @@
   [_strategy embedding-model content metadata]
   (embed-whole-document embedding-model content metadata))
 
+(defmethod embed-content :namespace-doc
+  [_strategy embedding-model content metadata]
+  (let [ns-form (parse/parse-first-ns-form content)]
+    (when-not ns-form
+      (throw (ex-info "No ns form found" {})))
+    (let [docstring (parse/extract-docstring ns-form)]
+      (when-not docstring
+        (throw (ex-info "No namespace docstring found" {})))
+      (let [namespace (parse/extract-namespace ns-form)]
+        (when-not namespace
+          (throw (ex-info "Could not extract namespace" {})))
+        (let [enhanced-metadata (assoc metadata :namespace namespace)
+              string-metadata   (into {} (map (fn [[k v]] [(name k) v]) enhanced-metadata))
+              lc4j-metadata     (Metadata/from string-metadata)
+              ;; Embed the docstring but store the full content
+              docstring-segment (TextSegment/from docstring lc4j-metadata)
+              response          (.embed embedding-model docstring-segment)
+              ;; Create segment with full content for storage
+              full-segment      (TextSegment/from content lc4j-metadata)]
+          {:embedding-response response
+           :segment full-segment
+           :metadata enhanced-metadata})))))
+
 (defmulti ingest-segments
   "Dispatch ingest based on strategy.
   Returns nil on success."
@@ -160,10 +184,12 @@
    {:keys [file metadata embedding ingest] :as file-map}]
   (try
     (let [content         (slurp file)
-          embedding-result (embed-content embedding embedding-model content metadata)]
+          embedding-result (embed-content embedding embedding-model content metadata)
+          ;; Use enhanced metadata if strategy provided it, otherwise use original
+          final-metadata  (or (:metadata embedding-result) metadata)]
       (ingest-segments ingest embedding-store embedding-result)
       (when metadata-values
-        (record-metadata-values metadata-values metadata))
+        (record-metadata-values metadata-values final-metadata))
       file-map)
     (catch Exception e
       (assoc file-map :error (.getMessage e)))))
