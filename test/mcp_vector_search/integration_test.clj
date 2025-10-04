@@ -164,7 +164,7 @@
                   metadata-schema (get-in search-tool [:inputSchema :properties "metadata"])]
 
               ;; Schema should include all discovered metadata fields
-              (is (= #{"version" "type"} (set (keys (:properties metadata-schema)))))
+              (is (= #{"version" "type" "doc-id"} (set (keys (:properties metadata-schema)))))
 
               ;; Each field should have enum constraints with sorted values
               (is (= ["v1" "v2"] (get-in metadata-schema [:properties "version" :enum])))

@@ -393,7 +393,7 @@
                           :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 3 (:ingested result)))
-            (is (= #{:version :type} (set (keys @metadata-values))))
+            (is (= #{:version :type :doc-id} (set (keys @metadata-values))))
             (is (= #{"v1" "v2"} (:version @metadata-values)))
             (is (= #{"doc"} (:type @metadata-values))))
           (finally
@@ -452,9 +452,38 @@
                           :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 1 (:ingested result)))
-            (is (= {} @metadata-values)))
+            (is (= #{:doc-id} (set (keys @metadata-values))))
+            (is (= #{(.getPath file1)} (:doc-id @metadata-values))))
           (finally
             (.delete file1)
+            (.delete test-dir)))))
+
+    (testing "tracks :doc-id in metadata values"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/doc-id")
+            file1 (io/file test-dir "doc1.txt")
+            file2 (io/file test-dir "doc2.txt")]
+        (.mkdirs test-dir)
+        (spit file1 "content 1")
+        (spit file2 "content 2")
+        (try
+          (let [metadata-values (atom {})
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :metadata-values metadata-values}
+                config {:path-specs
+                        [{:segments [{:type :literal :value (.getPath test-dir)}
+                                     {:type :literal :value "/"}
+                                     {:type :glob :pattern "*"}
+                                     {:type :literal :value ".txt"}]
+                          :base-path (.getPath test-dir)
+                          :embedding :whole-document
+                          :ingest :whole-document}]}
+                result (sut/ingest system config)]
+            (is (= 2 (:ingested result)))
+            (is (= #{(.getPath file1) (.getPath file2)} (:doc-id @metadata-values))))
+          (finally
+            (.delete file1)
+            (.delete file2)
             (.delete test-dir)))))))
 
 (deftest namespace-doc-embedding-test
@@ -567,6 +596,28 @@
             (is (= 1 (:ingested result)))
             (is (= #{"com.example"} (:namespace @metadata-values)))
             (is (= #{"lib"} (:type @metadata-values))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing "adds :doc-id to metadata with :namespace-doc strategy"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/ns-doc-id")
+            test-file (io/file test-dir "code.clj")]
+        (.mkdirs test-dir)
+        (spit test-file "(ns my.ns \"Docs\")")
+        (try
+          (let [metadata-values (atom {})
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :metadata-values metadata-values}
+                file-maps [{:file test-file
+                            :path (.getPath test-file)
+                            :metadata {}
+                            :embedding :namespace-doc
+                            :ingest :whole-document}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 1 (:ingested result)))
+            (is (= #{(.getPath test-file)} (:doc-id @metadata-values))))
           (finally
             (.delete test-file)
             (.delete test-dir)))))))

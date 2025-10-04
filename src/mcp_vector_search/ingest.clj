@@ -114,33 +114,36 @@
 (defn- embed-whole-document
   "Embedding strategy: embed entire document as single segment.
   Returns map with :embedding-response and :segment."
-  [embedding-model content metadata]
-  (let [string-metadata (into {} (map (fn [[k v]] [(name k) v]) metadata))
+  [embedding-model content metadata path]
+  (let [metadata-with-id (assoc metadata :doc-id path)
+        string-metadata (into {} (map (fn [[k v]] [(name k) v]) metadata-with-id))
         lc4j-metadata   (Metadata/from string-metadata)
         segment         (TextSegment/from content lc4j-metadata)
         response        (.embed embedding-model segment)]
     {:embedding-response response
-     :segment segment}))
+     :segment segment
+     :metadata metadata-with-id}))
 
 (defn- ingest-whole-document
   "Ingest strategy: add single embedding to store.
   Returns nil on success."
   [embedding-store embedding-result]
   (let [embedding (.content (:embedding-response embedding-result))
-        segment (:segment embedding-result)]
-    (.add embedding-store embedding segment)))
+        segment (:segment embedding-result)
+        doc-id (:path embedding-result)]
+    (.add embedding-store doc-id embedding segment)))
 
 (defmulti embed-content
   "Dispatch embedding based on strategy.
   Returns map with :embedding-response and :segment (or :segments)."
-  (fn [strategy _embedding-model _content _metadata] strategy))
+  (fn [strategy _embedding-model _content _metadata _path] strategy))
 
 (defmethod embed-content :whole-document
-  [_strategy embedding-model content metadata]
-  (embed-whole-document embedding-model content metadata))
+  [_strategy embedding-model content metadata path]
+  (embed-whole-document embedding-model content metadata path))
 
 (defmethod embed-content :namespace-doc
-  [_strategy embedding-model content metadata]
+  [_strategy embedding-model content metadata path]
   (let [ns-form (parse/parse-first-ns-form content)]
     (when-not ns-form
       (throw (ex-info "No ns form found" {})))
@@ -150,7 +153,7 @@
       (let [namespace (parse/extract-namespace ns-form)]
         (when-not namespace
           (throw (ex-info "Could not extract namespace" {})))
-        (let [enhanced-metadata (assoc metadata :namespace namespace)
+        (let [enhanced-metadata (assoc metadata :namespace namespace :doc-id path)
               string-metadata   (into {} (map (fn [[k v]] [(name k) v]) enhanced-metadata))
               lc4j-metadata     (Metadata/from string-metadata)
               ;; Embed the docstring but store the full content
@@ -180,7 +183,7 @@
         ;; Create new segment with just the path as content, preserving metadata
         path (:path embedding-result)
         path-segment (TextSegment/from path original-metadata)]
-    (.add embedding-store embedding path-segment)))
+    (.add embedding-store path embedding path-segment)))
 
 (defn- ingest-file
   "Ingest a single file into the embedding store.
@@ -195,7 +198,7 @@
    {:keys [file path metadata embedding ingest] :as file-map}]
   (try
     (let [content         (slurp file)
-          embedding-result (embed-content embedding embedding-model content metadata)
+          embedding-result (embed-content embedding embedding-model content metadata path)
           ;; Use enhanced metadata if strategy provided it, otherwise use original
           final-metadata  (or (:metadata embedding-result) metadata)
           ;; Add path to embedding-result for ingest strategies that need it
