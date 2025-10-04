@@ -3,6 +3,7 @@
     [clojure.java.io :as io]
     [clojure.string :as str]
     [hawk.core :as hawk]
+    [mcp-vector-search.config :as config]
     [mcp-vector-search.ingest :as ingest])
   (:refer-clojure :exclude [file?])
   (:import
@@ -138,30 +139,54 @@
         matcher (re-matcher pattern path)]
     (.matches matcher)))
 
+(defn- normalize-path
+  "Normalize a path by resolving symlinks to get canonical path."
+  [path]
+  (try
+    (.getCanonicalPath (io/file path))
+    (catch Exception _
+      path)))
+
 (defn- setup-watch
   "Setup a watch for a single path-spec.
   Returns a hawk watcher handle."
   [system path-spec]
   (let [{:keys [base-path segments]} path-spec
-        base-file (io/file base-path)
+        ;; Normalize base-path to handle symlinks (e.g., /var -> /private/var on macOS)
+        normalized-base (normalize-path base-path)
+        base-file (io/file normalized-base)
         watch-path (if (.isFile base-file)
                      (.getParent base-file)
-                     base-path)
+                     normalized-base)
+        ;; Build normalized pattern by substituting normalized base for original base
+        original-base (str/join (map :value (take-while #(= :literal (:type %)) segments)))
+        normalized-pattern (str/replace-first
+                             (str/join (mapv (fn [{:keys [type] :as segment}]
+                                               (case type
+                                                 :literal (:value segment)
+                                                 :glob (case (:pattern segment)
+                                                         "**" "**"
+                                                         "*" "*")
+                                                 :capture (str "(?<" (:name segment) ">" (:pattern segment) ")")))
+                                             segments))
+                             original-base
+                             normalized-base)
+        ;; Parse the normalized pattern back into segments
+        normalized-segments (:segments (config/parse-path-spec normalized-pattern))
         recursive? (should-watch-recursively? segments base-path)]
 
     (try
       (hawk/watch!
-        {:watcher :polling
-         :sensitivity :high}
         [{:paths [watch-path]
           :filter (fn [ctx {:keys [file] :as event}]
                     (and (hawk/file? ctx event)
-                         (matches-path-spec? (.getPath ^File file) segments)))
+                         (matches-path-spec? (.getPath ^File file) normalized-segments)))
           :handler (fn [ctx event]
                      (debounce-event system (.getPath ^File (:file event)) event path-spec)
                      ctx)}])
       (catch Exception e
-        (println "Failed to setup watch for" base-path ":" (.getMessage e))
+        (binding [*out* *err*]
+          (println "Failed to setup watch for" base-path ":" (.getMessage e)))
         nil))))
 
 (defn start-watches
