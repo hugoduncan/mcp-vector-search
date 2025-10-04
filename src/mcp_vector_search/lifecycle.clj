@@ -1,4 +1,6 @@
 (ns mcp-vector-search.lifecycle
+  (:require
+    [mcp-vector-search.watch :as watch])
   (:import
     (dev.langchain4j.model.embedding.onnx.allminilml6v2
       AllMiniLmL6V2EmbeddingModel)
@@ -25,11 +27,25 @@
     (reset! system
             {:embedding-model (create-embedding-model)
              :embedding-store (InMemoryEmbeddingStore.)
-             :metadata-values (atom {})}))
+             :metadata-values (atom {})
+             :watches nil}))
+  @system)
+
+(defn start-watches
+  "Start file watches for the system.
+  Takes a processed config map.
+  Returns the updated system map."
+  [config]
+  (when @system
+    (let [watchers (watch/start-watches @system config)]
+      (swap! system assoc :watches watchers)))
   @system)
 
 (defn stop
   "Stop the system and release resources.
   Returns nil."
   []
+  (when @system
+    (when-let [watchers (:watches @system)]
+      (watch/stop-watches watchers)))
   (reset! system nil))

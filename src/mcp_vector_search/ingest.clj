@@ -185,7 +185,7 @@
         path-segment (TextSegment/from path original-metadata)]
     (.add embedding-store path embedding path-segment)))
 
-(defn- ingest-file
+(defn ingest-file
   "Ingest a single file into the embedding store.
 
   Takes a system map with :embedding-model, :embedding-store,

@@ -25,6 +25,9 @@
 
       (ingest/ingest system parsed-config)
 
+      ;; Start file watches after initial ingest
+      (lifecycle/start-watches parsed-config)
+
       (let [search-tool (tools/search-tool system parsed-config)]
         (with-open [server (mcp-server/create-server
                              {:transport {:type :stdio}

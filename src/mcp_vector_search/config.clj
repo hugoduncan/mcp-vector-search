@@ -127,22 +127,30 @@
   - :name (optional) - source name
   - :embedding (optional) - embedding strategy, defaults to :whole-document
   - :ingest (optional) - ingest strategy, defaults to :whole-document
+  - :watch? (optional) - enable file watching, defaults to global :watch? or false
   - additional keys become base-metadata
 
+  Global config keys:
+  - :watch? - global default for file watching (default: false)
+  - :description - search tool description
+
   Adds :description with default if not provided.
-  Adds :embedding and :ingest defaults to each path-spec.
+  Adds :embedding, :ingest, and :watch? defaults to each path-spec.
 
   Returns a config map with :path-specs ready for ingestion."
-  [{:keys [sources description] :as _config}]
-  (cond-> {}
-    sources (assoc :path-specs
-                   (mapv (fn [{:keys [path name embedding ingest] :as source}]
-                           (let [parsed (parse-path-spec path)
-                                 metadata (dissoc source :path :name :embedding :ingest)]
-                             (cond-> parsed
-                               (seq metadata) (assoc :base-metadata metadata)
-                               name (assoc-in [:base-metadata :name] name)
-                               true (assoc :embedding (or embedding :whole-document))
-                               true (assoc :ingest (or ingest :whole-document)))))
-                         sources))
-    true (assoc :description (or description default-search-description))))
+  [{:keys [sources description watch?] :as _config}]
+  (let [global-watch? (boolean watch?)]
+    (cond-> {}
+      sources (assoc :path-specs
+                     (mapv (fn [{:keys [path name embedding ingest watch?] :as source}]
+                             (let [parsed (parse-path-spec path)
+                                   metadata (dissoc source :path :name :embedding :ingest :watch?)]
+                               (cond-> parsed
+                                 (seq metadata) (assoc :base-metadata metadata)
+                                 name (assoc-in [:base-metadata :name] name)
+                                 true (assoc :embedding (or embedding :whole-document))
+                                 true (assoc :ingest (or ingest :whole-document))
+                                 true (assoc :watch? (if (nil? watch?) global-watch? (boolean watch?))))))
+                           sources))
+      true (assoc :description (or description default-search-description))
+      true (assoc :watch? global-watch?))))
