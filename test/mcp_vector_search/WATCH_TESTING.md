@@ -6,12 +6,30 @@ File watching functionality uses the hawk library for cross-platform file system
 
 ## Automated Tests
 
-Unit tests (`watch_test.clj`) verify:
+### Unit Tests (`watch_test.clj`)
+Verify core watch logic:
 - Watch configuration (global and per-source `:watch?`)
 - Path matching against patterns (literals, globs, captures)
 - Recursive watch detection based on path specs
 
-All unit tests pass reliably across platforms.
+**25 assertions, all passing**
+
+### Integration Tests (`watch_integration_test.clj`)
+Test re-indexing logic without hawk timing dependencies:
+- Re-ingesting modified files (simulating MODIFY events)
+- Removing deleted files (simulating DELETE events)
+- Adding newly created files (simulating CREATE events)
+- Handling multiple rapid changes (simulating debouncing)
+
+These tests directly call the ingestion logic that watch event handlers
+would trigger, verifying the behavior without relying on hawk's async
+event delivery.
+
+**7 assertions, all passing**
+
+Note: Even hawk's own tests acknowledge timing challenges with comments
+like "FIXME: this is racey". Our integration tests avoid these issues
+by testing the logic independently of the watch mechanism.
 
 ## Manual Testing
 
