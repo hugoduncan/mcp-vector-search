@@ -27,8 +27,6 @@ Add the following alias to your `~/.clojure/deps.edn` file:
 
 **Note:** Replace `LATEST_SHA_HERE` with the latest commit SHA from the repository.
 
-The `--enable-native-access=ALL-UNNAMED` JVM flag is required for the AllMiniLmL6V2 embedding model.
-
 ## Client Configuration
 
 ### Claude Code
