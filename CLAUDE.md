@@ -6,6 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 An MCP (Model Context Protocol) server that indexes documents using semantic embeddings and provides a search tool. Uses LangChain4j with AllMiniLmL6V2 embedding model and an in-memory vector store. Embeddings are rebuilt on server start.
 
+**Purpose**: Enable AI agents to access large knowledge bases through semantic search without consuming limited context. The search tool is available on-demand via MCP, and only search results enter the agent's context.
+
+**Key capabilities**:
+- Semantic search across documentation, code, and knowledge bases
+- Configurable embedding strategies (`:whole-document`, `:namespace-doc`)
+- Configurable ingest strategies (`:whole-document`, `:file-path`)
+- Metadata filtering to narrow searches
+- File watching for automatic re-indexing during development
+
+See `doc/about.md` for detailed rationale.
+
 ## Common Commands
 
 ### Running the Server
@@ -42,24 +53,36 @@ The project requires `--enable-native-access=ALL-UNNAMED` JVM flag for the embed
 3. **Configuration** (`config.clj`): Parses path specs with globs, captures, and metadata
 4. **Ingestion** (`ingest.clj`): Matches files, embeds content via configurable strategies, stores in vector DB
 5. **Search** (`tools.clj`): Exposes MCP search tool with metadata filtering
+6. **Watching** (`watch.clj`): Optional file watching with debouncing for automatic re-indexing
 
 ### Configuration System
 
-Config file (`.mcp-vector-search/config.edn`) specifies sources to index:
+Config file location (first found is used):
+- `.mcp-vector-search/config.edn` (project-specific)
+- `~/.mcp-vector-search/config.edn` (global)
+
+Config structure:
 
 ```clojure
-{:sources [{:path "/docs/**/*.md"
-            :name "README"           ; optional metadata
-            :embedding :whole-document  ; optional, defaults to :whole-document
-            :ingest :whole-document}]}  ; optional, defaults to :whole-document
+{:description "Custom search tool description"  ; optional
+ :watch? true                                   ; optional, enable file watching
+ :sources [{:path "/docs/**/*.md"
+            :name "Documentation"               ; optional, added to metadata
+            :embedding :whole-document          ; optional, defaults to :whole-document
+            :ingest :whole-document             ; optional, defaults to :whole-document
+            :watch? true                        ; optional, overrides global :watch?
+            :custom-key "custom-value"}]}       ; any additional keys become metadata
 ```
 
 Path specs support:
-- Globs: `*` (single level), `**` (recursive)
-- Named captures: `(?<name>regex)` - captured values become metadata
+- **Globs**: `*` (single level), `**` (recursive)
+- **Named captures**: `(?<name>regex)` - captured values become metadata
+- **Literal paths**: Direct file or directory paths
 - Any additional keys in source maps become base metadata
 
 The `process-config` function transforms `:sources` into `:path-specs` with parsed segments and base paths for filesystem walking.
+
+See `doc/path-spec.md` for formal path specification syntax and `doc/using.md` for comprehensive configuration guide.
 
 ### Embedding & Ingest Strategies
 
@@ -68,13 +91,32 @@ Configurable via multimethods to support different document processing approache
 - `embed-content` multimethod: dispatches on `:embedding` strategy, creates embeddings from content
 - `ingest-segments` multimethod: dispatches on `:ingest` strategy, stores embeddings
 
-Default `:whole-document` strategy embeds entire file as single segment (see `ingest.clj:113-148`).
+**Embedding Strategies**:
+- `:whole-document` (default) - Embeds entire file content
+- `:namespace-doc` - For Clojure files, embeds only namespace docstring (but stores full file with `:whole-document` ingest)
+
+**Ingest Strategies**:
+- `:whole-document` (default) - Stores complete file content in vector DB
+- `:file-path` - Stores only file path, not content (reduces memory usage)
+
+**Strategy Combinations**:
+```clojure
+;; Search by namespace doc, return full source
+{:path "/src/**/*.clj"
+ :embedding :namespace-doc
+ :ingest :whole-document}
+
+;; Search by content, return only paths
+{:path "/docs/**/*.md"
+ :embedding :whole-document
+ :ingest :file-path}
+```
 
 To add new strategies, implement both multimethods:
 ```clojure
 (defmethod embed-content :custom-strategy
-  [_strategy embedding-model content metadata]
-  ;; Return {:embedding-response ... :segment ...}
+  [_strategy embedding-model content metadata path]
+  ;; Return {:embedding-response ... :segment ... :metadata ...}
   )
 
 (defmethod ingest-segments :custom-strategy
@@ -83,6 +125,8 @@ To add new strategies, implement both multimethods:
   )
 ```
 
+See `ingest.clj:113-148` for `:whole-document` implementation and `ingest.clj:150-195` for `:namespace-doc` implementation.
+
 ### Metadata System
 
 - Metadata comes from: base-metadata (source config) + captures (path spec regex groups)
@@ -90,17 +134,69 @@ To add new strategies, implement both multimethods:
 - Search tool dynamically generates JSON schema with enum constraints from discovered values
 - Metadata filtering uses LangChain4j `IsEqualTo` filters combined with AND logic
 
+**Metadata Keys**:
+- Any keys in source config (except `:path`, `:name`, `:embedding`, `:ingest`, `:watch?`) become base metadata
+- Named captures from path specs (e.g., `(?<category>[^/]+)`) are added as metadata
+- `:name` key is also added to metadata if provided
+- `:doc-id` is automatically added with the file path (used for watch updates/deletes)
+- `:namespace` is added by `:namespace-doc` embedding strategy
+
+**Example**:
+```clojure
+{:path "/docs/(?<category>[^/]+)/*.md"
+ :project "myapp"
+ :type "documentation"}
+```
+
+For file `/docs/api/auth.md`:
+- Metadata: `{:project "myapp", :type "documentation", :category "api", :doc-id "/docs/api/auth.md"}`
+
+### File Watching
+
+Optional file watching system for automatic re-indexing:
+
+**Configuration**:
+- Global `:watch? true` enables watching for all sources
+- Per-source `:watch? true/false` overrides global setting
+- Only files matching path spec patterns are processed
+
+**Behavior**:
+- Uses `hawk` library for filesystem watching
+- Events are debounced (500ms) to avoid excessive re-indexing
+- Operations:
+  - File created → index new file
+  - File modified → remove old embeddings by `:doc-id`, re-index
+  - File deleted → remove embeddings by `:doc-id`
+- Recursive watching for directories with `**` glob
+- Base path (literal prefix) determines watch root directory
+
+**Implementation**:
+- `watch.clj/setup-watches` - Creates watchers for each path spec
+- `watch.clj/handle-watch-event` - Processes file events with debouncing
+- `watch.clj/stop-watches` - Cleanup on server shutdown
+
+See `doc/using.md` for watch configuration examples and `test/mcp_vector_search/watch_integration_test.clj` for behavior specification.
+
 ### System Map
 
 Global `system` atom in `lifecycle.clj` contains:
 - `:embedding-model` - AllMiniLmL6V2EmbeddingModel instance
 - `:embedding-store` - InMemoryEmbeddingStore instance
 - `:metadata-values` - atom tracking `{field-key #{values...}}`
+- `:watches` - atom containing active watch handlers (when `:watch?` enabled)
 
 ## Key Implementation Details
 
 ### Path Spec Parsing
 `config.clj` parses path strings into segment vectors with types `:literal`, `:glob`, or `:capture`. The `base-path` is the literal prefix used for filesystem walking, while the full pattern matches against complete file paths.
+
+**Parsing algorithm** (see `doc/path-spec.md`):
+1. If starts with `(?<` → parse as named capture
+2. If starts with `**` → parse as recursive glob
+3. If starts with `*` → parse as single-level glob
+4. Otherwise → parse as literal
+
+**Base path calculation**: Concatenation of literal segments from start until first non-literal segment. Determines starting directory for filesystem walking.
 
 ### File Matching
 `ingest.clj/files-from-path-spec` handles two cases:
@@ -111,3 +207,89 @@ Regex captures are extracted and merged with base-metadata to produce final file
 
 ### Search Tool
 `tools.clj/search-tool` creates an MCP tool spec with dynamic schema. The schema's metadata parameter has enum constraints based on ingested values, ensuring clients only use valid filter values.
+
+**Tool parameters**:
+- `query` (required): Search text
+- `limit` (optional): Max results (default: 10)
+- `metadata` (optional): Metadata filters as key-value pairs (AND logic)
+
+**Dynamic schema generation**: The tool schema is regenerated each time it's accessed, using current values from `:metadata-values` atom to populate enum constraints.
+
+## Documentation Files
+
+- **`README.md`** - Quick start, installation, basic usage
+- **`doc/about.md`** - Project purpose, problem/solution, use cases
+- **`doc/install.md`** - Detailed installation for various MCP clients
+- **`doc/using.md`** - Complete configuration reference, strategies, file watching, troubleshooting
+- **`doc/path-spec.md`** - Formal path specification syntax and grammar
+
+## Common Development Tasks
+
+### Adding a New Embedding Strategy
+
+1. Implement `embed-content` multimethod in `ingest.clj`:
+```clojure
+(defmethod embed-content :my-strategy
+  [_strategy embedding-model content metadata path]
+  (let [text-to-embed (extract-relevant-content content)
+        embedding-response (.embed embedding-model text-to-embed)
+        segment (TextSegment/from content metadata)]
+    {:embedding-response embedding-response
+     :segment segment
+     :metadata metadata}))
+```
+
+2. Document the strategy in `doc/using.md` under "Embedding Strategies"
+3. Add tests in `test/mcp_vector_search/ingest_test.clj`
+
+### Adding a New Ingest Strategy
+
+1. Implement `ingest-segments` multimethod in `ingest.clj`:
+```clojure
+(defmethod ingest-segments :my-strategy
+  [_strategy embedding-store {:keys [embedding-response segment metadata]}]
+  (let [custom-segment (create-custom-segment segment)]
+    (.add embedding-store
+          (.content embedding-response)
+          custom-segment)))
+```
+
+2. Document the strategy in `doc/using.md` under "Ingest Strategies"
+3. Add tests in `test/mcp_vector_search/ingest_test.clj`
+
+### Testing Configuration Changes
+
+Use `test/resources/` with test-specific subdirectories for fixtures:
+```clojure
+(def test-config-path "test/resources/my_test/config.edn")
+```
+
+This ensures test isolation and prevents fixture conflicts.
+
+### Debugging Search Results
+
+Check metadata values discovered during ingestion:
+```clojure
+@(:metadata-values @lifecycle/system)
+;; => {:category #{"api" "guides"}, :project #{"myapp"}}
+```
+
+Verify embeddings were stored:
+```clojure
+(let [store (:embedding-store @lifecycle/system)]
+  (.size (.embeddings store)))
+;; => 42
+```
+
+## Code Style Notes
+
+- Use doc strings for all public functions and macros (before argument vector)
+- `deftest` forms do not have docstrings
+- Start each test with a comment describing intention and contracts
+- Wrap tests in outer `testing` form describing test subject
+- Use BDD style for `testing` forms (should read like a specification when chained)
+- Use `;;;` prefix for section separators in Clojure files (no `====` or `----`)
+- Comment the WHY, not the WHAT
+- Test strings should be short (≤20 chars if possible)
+- Mark temporary code with `TODO` comments
+- Mark tests matching current vs. intended behavior with `FIXME`
