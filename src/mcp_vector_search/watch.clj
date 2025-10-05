@@ -192,9 +192,9 @@
         [{:paths [watch-path]
           :filter (fn [ctx {:keys [file] :as event}]
                     (and (hawk/file? ctx event)
-                         (matches-path-spec? (.getPath ^File file) normalized-segments)))
+                         (matches-path-spec? (normalize-path (.getPath ^File file)) normalized-segments)))
           :handler (fn [ctx event]
-                     (debounce-event system (.getPath ^File (:file event)) event path-spec)
+                     (debounce-event system (normalize-path (.getPath ^File (:file event))) event path-spec)
                      ctx)}])
       (catch Exception e
         (binding [*out* *err*]
