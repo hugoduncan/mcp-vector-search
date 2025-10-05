@@ -107,12 +107,18 @@
                                 :ingest ingest-strategy}]
 
                   (when (= kind :modify)
-                    (log-if-server system :info {:event "file-modified" :path path})
+                    (log-if-server
+                      system
+                      :info
+                      {:event "file-modified" :path path})
                     ;; Remove old version before re-adding
                     (let [embedding-store (:embedding-store system)]
                       (.removeAll embedding-store [path])))
                   (when (= kind :create)
-                    (log-if-server system :info {:event "file-created" :path path}))
+                    (log-if-server
+                      system
+                      :info
+                      {:event "file-created" :path path}))
                   (let [result (ingest/ingest-file system file-map)]
                     (when (:error result)
                       (log-if-server system :error {:event "ingest-failed"
@@ -202,6 +208,12 @@
                      normalized-base)
         ;; Build normalized pattern by substituting normalized base for original base
         original-base (str/join (map :value (take-while #(= :literal (:type %)) segments)))
+        ;; Preserve trailing separator if present
+        has-trailing-sep? (str/ends-with? original-base "/")
+        normalized-base-with-sep (if (and has-trailing-sep?
+                                         (not (str/ends-with? normalized-base "/")))
+                                   (str normalized-base "/")
+                                   normalized-base)
         normalized-pattern (str/replace-first
                              (str/join (mapv (fn [{:keys [type] :as segment}]
                                                (case type
@@ -212,7 +224,7 @@
                                                  :capture (str "(?<" (:name segment) ">" (:pattern segment) ")")))
                                              segments))
                              original-base
-                             normalized-base)
+                             normalized-base-with-sep)
         ;; Parse the normalized pattern back into segments
         normalized-segments (:segments (config/parse-path-spec normalized-pattern))
         ;; Create normalized path-spec for event processing
