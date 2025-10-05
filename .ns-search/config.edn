@@ -1,0 +1,6 @@
+{:description "Search for namespaces"
+ :watch? true
+ :sources [{:name "clj files"
+            :path "src/**/*.clj"
+            :embedding :namespace-doc
+            :ingest :file-path}]}
