@@ -1,5 +1,10 @@
 (ns mcp-vector-search.main
-  "MCP vector search server main entry point"
+  "MCP vector search server main entry point.
+
+  ## Responsibilities
+  Orchestrates server startup by coordinating configuration loading, system
+  initialization, document ingestion, file watching setup, and MCP server
+  creation. Handles shutdown hooks to ensure clean resource cleanup."
   (:gen-class)
   (:require
     [mcp-clj.log :as log]

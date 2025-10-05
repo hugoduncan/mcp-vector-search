@@ -1,4 +1,16 @@
 (ns mcp-vector-search.config
+  "Configuration reading and path specification parsing.
+
+  ## Responsibilities
+  Reads EDN configuration files and transforms them into internal format.
+  Parses path specifications containing globs, literals, and named captures
+  into structured segments for filesystem matching and metadata extraction.
+
+  ## Implementation Notes
+  Path spec parsing algorithm processes strings left-to-right, identifying
+  named captures `(?<name>pattern)`, globs (`*`, `**`), and literal text.
+  Calculates base paths (literal prefix) to determine filesystem walk roots.
+  See doc/path-spec.md for formal specification."
   (:refer-clojure :exclude [read])
   (:require
     [clojure.edn :as edn]

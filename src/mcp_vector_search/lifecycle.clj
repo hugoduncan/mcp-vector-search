@@ -1,4 +1,15 @@
 (ns mcp-vector-search.lifecycle
+  "System lifecycle management for embedding and storage resources.
+
+  ## Responsibilities
+  Manages the lifecycle of core system components: the AllMiniLmL6V2 embedding
+  model, in-memory vector store, metadata tracking atom, and file watchers.
+  Provides start/stop functions to initialize and cleanly shut down resources.
+
+  ## Implementation Notes
+  Uses a global atom to hold system state, ensuring single initialization of
+  the embedding model (which has native dependencies requiring JVM flags).
+  Coordinates with watch namespace for file monitoring lifecycle."
   (:require
     [mcp-vector-search.watch :as watch])
   (:import

@@ -1,5 +1,10 @@
 (ns mcp-vector-search.parse
-  "Parsing utilities for Clojure source files."
+  "Parsing utilities for Clojure source files.
+
+  ## Responsibilities
+  Provides parsing functions for extracting structural information from Clojure
+  source code. Used by the `:namespace-doc` embedding strategy to extract
+  namespace names and docstrings for indexing."
   (:require [clojure.edn :as edn]
             [clojure.string :as str]))
 

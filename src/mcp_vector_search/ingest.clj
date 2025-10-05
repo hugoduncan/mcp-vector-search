@@ -1,4 +1,17 @@
 (ns mcp-vector-search.ingest
+  "Document ingestion with pluggable embedding and storage strategies.
+
+  ## Responsibilities
+  Matches files from parsed path specs, embeds their content using configurable
+  strategies, and stores embeddings in the vector database. Tracks metadata
+  values for dynamic schema generation.
+
+  ## Implementation Notes
+  Uses multimethods `embed-content` and `ingest-segments` to support different
+  processing strategies. Built-in strategies include `:whole-document` (embeds
+  and stores entire files) and `:namespace-doc` (embeds namespace docstrings
+  but stores full source). File matching combines regex patterns from path
+  specs with filesystem walking."
   (:require
     [clojure.java.io :as io]
     [clojure.string :as str]

@@ -1,4 +1,15 @@
 (ns mcp-vector-search.tools
+  "MCP search tool creation with dynamic schema generation.
+
+  ## Responsibilities
+  Creates the MCP search tool specification with metadata filtering support.
+  Dynamically generates JSON schema with enum constraints based on metadata
+  values discovered during ingestion, ensuring clients only use valid filters.
+
+  ## Implementation Notes
+  Schema is generated on-demand from the system's `:metadata-values` atom.
+  Metadata filters use LangChain4j `IsEqualTo` comparisons combined with AND
+  logic. Search results include both content and similarity scores."
   (:require
     [clojure.data.json :as json])
   (:import

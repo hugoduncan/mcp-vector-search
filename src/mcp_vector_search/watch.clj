@@ -1,4 +1,16 @@
 (ns mcp-vector-search.watch
+  "File watching with debouncing for automatic re-indexing.
+
+  ## Responsibilities
+  Monitors configured file paths for changes and automatically re-indexes
+  modified documents. Handles file creation, modification, and deletion events.
+  Provides lifecycle management for watch resources.
+
+  ## Implementation Notes
+  Uses hawk library for filesystem watching. Events are debounced (500ms) to
+  avoid excessive re-indexing when multiple rapid changes occur. Path
+  normalization handles symlinks (e.g., /var -> /private/var on macOS).
+  Modified files have old embeddings removed by `:doc-id` before re-indexing."
   (:require
     [clojure.java.io :as io]
     [clojure.string :as str]
