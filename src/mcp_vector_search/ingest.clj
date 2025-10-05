@@ -15,6 +15,7 @@
   (:require
     [clojure.java.io :as io]
     [clojure.string :as str]
+    [mcp-clj.mcp-server.logging :as logging]
     [mcp-vector-search.parse :as parse])
   (:import
     (dev.langchain4j.data.document
@@ -81,11 +82,43 @@
   - :embedding - embedding strategy
   - :ingest - ingest strategy"
   [{:keys [segments base-path base-metadata embedding ingest]}]
-  (let [pattern   (build-pattern segments)
-        base-file (io/file base-path)]
+  (let [base-file (io/file base-path)
+        ;; Normalize paths only if they're absolute (to handle symlinks like /var -> /private/var)
+        ;; Keep relative paths as-is to preserve test compatibility
+        normalize-path (fn [^File f]
+                         (let [path (.getPath f)]
+                           (if (.isAbsolute f)
+                             (try
+                               (.getCanonicalPath f)
+                               (catch Exception _
+                                 path))
+                             path)))
+        ;; Normalize segments if base-path is absolute (similar to watch.clj logic)
+        normalized-base (if (.isAbsolute base-file)
+                          (try
+                            (.getCanonicalPath (io/file base-path))
+                            (catch Exception _ base-path))
+                          base-path)
+        ;; Rebuild segments with normalized base if it changed
+        normalized-segments (if (= base-path normalized-base)
+                              segments
+                              (let [prefix-literals (take-while #(= :literal (:type %)) segments)
+                                    raw-base (str/join (map :value prefix-literals))
+                                    remaining (drop-while #(= :literal (:type %)) segments)
+                                    ;; Check if there was a trailing separator after the base
+                                    ;; by looking at the next segment's position in the original path
+                                    first-remaining (first remaining)
+                                    needs-separator? (and first-remaining
+                                                         (not= :literal (:type first-remaining))
+                                                         (str/ends-with? raw-base "/"))]
+                                (vec (concat [{:type :literal :value (if needs-separator?
+                                                                       (str normalized-base "/")
+                                                                       normalized-base)}]
+                                             remaining))))
+        pattern (build-pattern normalized-segments)]
     (if (.isFile base-file)
       ;; Literal file path
-      (let [path (.getPath base-file)]
+      (let [path (normalize-path base-file)]
         (when (re-matches pattern path)
           [{:file      base-file
             :path      path
@@ -99,10 +132,10 @@
                     [])]
         (into []
               (keep (fn [^File file]
-                      (let [path    (.getPath file)
+                      (let [path    (normalize-path file)
                             matcher (re-matcher pattern path)]
                         (when (.matches matcher)
-                          (let [captures (extract-captures matcher segments)]
+                          (let [captures (extract-captures matcher normalized-segments)]
                             {:file      file
                              :path      path
                              :captures  captures
@@ -223,6 +256,16 @@
     (catch Exception e
       (assoc file-map :error (.getMessage e)))))
 
+(defn- log-if-server
+  "Log a message if server is available in the system."
+  [system level data]
+  (when-let [server (:server system)]
+    (case level
+      :info (logging/info server data :logger "ingest")
+      :warn (logging/warn server data :logger "ingest")
+      :error (logging/error server data :logger "ingest")
+      :debug (logging/debug server data :logger "ingest"))))
+
 (defn ingest-files
   "Ingest a sequence of files from path-spec results.
 
@@ -232,6 +275,14 @@
   (let [results (map #(ingest-file system %) file-maps)
         successes (filter (complement :error) results)
         failures (filter :error results)]
+    (when (seq failures)
+      (doseq [failure failures]
+        (log-if-server system :error {:event "ingest-failed"
+                                      :path (:path failure)
+                                      :error (:error failure)})))
+    (log-if-server system :info {:event "ingest-complete"
+                                 :ingested (count successes)
+                                 :failed (count failures)})
     {:ingested (count successes)
      :failed (count failures)
      :failures failures}))

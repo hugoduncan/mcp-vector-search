@@ -205,6 +205,19 @@ Global `system` atom in `lifecycle.clj` contains:
 
 Regex captures are extracted and merged with base-metadata to produce final file metadata.
 
+### Path Normalization
+`ingest.clj` and `watch.clj` normalize absolute file paths to handle symlinks (e.g., `/var` → `/private/var` on macOS). This ensures document IDs match between ingestion and watch operations.
+
+**Why needed**: Watch events provide canonical paths, but filesystem traversal may use raw paths. Without normalization, `.removeAll` operations during file updates/deletes won't find matching documents.
+
+**Implementation** (`ingest.clj:84-136`):
+- Absolute paths are normalized using `.getCanonicalPath()`
+- Relative paths remain unchanged (preserves test compatibility)
+- Pattern segments are rebuilt with normalized base path when needed
+- Trailing separators (`/`) are preserved during segment reconstruction
+
+**Watch synchronization** (`watch.clj:181-187`): Uses same normalization logic to ensure paths match those stored during ingestion.
+
 ### Search Tool
 `tools.clj/search-tool` creates an MCP tool spec with dynamic schema. The schema's metadata parameter has enum constraints based on ingested values, ensuring clients only use valid filter values.
 

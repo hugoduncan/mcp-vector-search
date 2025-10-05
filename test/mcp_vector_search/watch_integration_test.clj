@@ -38,6 +38,7 @@
                     :metadata-values (atom {})}]
         (try
           (let [test-file (fs/file temp-dir "test.md")
+                canonical-path (.getCanonicalPath test-file)
                 _ (spit test-file "Initial content")
                 config {:sources [{:path (str (fs/file temp-dir "*.md"))}]}
                 parsed-config (config/process-config config)]
@@ -48,11 +49,11 @@
                                        (:embedding-model system))))
 
             ;; Simulate MODIFY event: remove old, re-ingest new
-            (.removeAll (:embedding-store system) [(str test-file)])
+            (.removeAll (:embedding-store system) [canonical-path])
             (spit test-file "Modified content")
 
             (let [file-map {:file test-file
-                            :path (str test-file)
+                            :path canonical-path
                             :captures {}
                             :metadata {}
                             :embedding :whole-document
@@ -73,6 +74,7 @@
                     :metadata-values (atom {})}]
         (try
           (let [test-file (fs/file temp-dir "test.md")
+                canonical-path (.getCanonicalPath test-file)
                 _ (spit test-file "Content to delete")
                 config {:sources [{:path (str (fs/file temp-dir "*.md"))}]}
                 parsed-config (config/process-config config)]
@@ -83,7 +85,7 @@
                                        (:embedding-model system))))
 
             ;; Simulate DELETE event
-            (.removeAll (:embedding-store system) [(str test-file)])
+            (.removeAll (:embedding-store system) [canonical-path])
 
             ;; Should have 0 documents
             (is (zero? (count-embeddings (:embedding-store system)
@@ -125,8 +127,9 @@
                     :metadata-values (atom {})}]
         (try
           (let [test-file (fs/file temp-dir "test.md")
+                canonical-path (.getCanonicalPath test-file)
                 file-map {:file test-file
-                          :path (str test-file)
+                          :path canonical-path
                           :captures {}
                           :metadata {}
                           :embedding :whole-document
@@ -135,7 +138,7 @@
             ;; Simulate rapid changes (last one wins after debouncing)
             (dotimes [i 5]
               (spit test-file (str "Change " i))
-              (.removeAll (:embedding-store system) [(str test-file)])
+              (.removeAll (:embedding-store system) [canonical-path])
               (ingest/ingest-file system file-map))
 
             ;; Should have exactly 1 document

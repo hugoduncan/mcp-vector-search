@@ -117,3 +117,4 @@
                       {:type :literal :value ".md"}]
             base-path "/docs/"]
         (is (true? (#'watch/should-watch-recursively? segments base-path)))))))
+

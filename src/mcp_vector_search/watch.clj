@@ -11,20 +11,21 @@
   avoid excessive re-indexing when multiple rapid changes occur. Path
   normalization handles symlinks (e.g., /var -> /private/var on macOS).
   Modified files have old embeddings removed by `:doc-id` before re-indexing."
+  (:refer-clojure :exclude [file?])
   (:require
     [clojure.java.io :as io]
     [clojure.string :as str]
     [hawk.core :as hawk]
+    [mcp-clj.mcp-server.logging :as logging]
     [mcp-vector-search.config :as config]
     [mcp-vector-search.ingest :as ingest])
-  (:refer-clojure :exclude [file?])
   (:import
     (java.io
       File)
     (java.util.regex
       Pattern)))
 
-;;; Debouncing
+;; Debouncing
 
 (defonce debounce-state (atom {}))
 (defonce debounce-timer (atom nil))
@@ -59,6 +60,16 @@
                  [(keyword name) (.group matcher name)])
                capture-names))))
 
+(defn- log-if-server
+  "Log a message if server is available in the system."
+  [system level data]
+  (when-let [server (:server system)]
+    (case level
+      :info (logging/info server data :logger "watch")
+      :warn (logging/warn server data :logger "watch")
+      :error (logging/error server data :logger "watch")
+      :debug (logging/debug server data :logger "watch"))))
+
 (defn- process-pending-events
   "Process all pending debounced events."
   [system]
@@ -75,16 +86,17 @@
     ;; Process each event
     (doseq [{:keys [path event path-spec]} events-to-process]
       (try
+        (log-if-server system :info {:event event :path path})
         (let [kind (:kind event)]
           (cond
-            (or (contains? kind :create) (contains? kind :modify))
+            (#{:create :modify} kind)
             (let [file (io/file path)
                   base-metadata (:base-metadata path-spec)
                   embedding (:embedding path-spec)
                   ingest-strategy (:ingest path-spec)
                   pattern (build-pattern (:segments path-spec))
                   matcher (re-matcher pattern path)]
-              (when (.matches matcher)
+              (if (.matches matcher)
                 (let [captures (extract-captures matcher (:segments path-spec))
                       metadata (merge base-metadata captures)
                       file-map {:file file
@@ -93,17 +105,33 @@
                                 :metadata metadata
                                 :embedding embedding
                                 :ingest ingest-strategy}]
-                  (when (contains? kind :modify)
+                  (when (= kind :modify)
+                    (log-if-server system :info {:event "file-modified" :path path})
                     ;; Remove old version before re-adding
                     (let [embedding-store (:embedding-store system)]
                       (.removeAll embedding-store [path])))
-                  (ingest/ingest-file system file-map))))
+                  (when (= kind :create)
+                    (log-if-server system :info {:event "file-created" :path path}))
+                  (let [result (ingest/ingest-file system file-map)]
+                    (when (:error result)
+                      (log-if-server system :error {:event "ingest-failed"
+                                                    :path path
+                                                    :error (:error result)}))))
+                ;; Pattern didn't match - this shouldn't happen if filter is correct
+                (log-if-server system :warn {:event "file-not-matched"
+                                             :path path
+                                             :pattern (str pattern)})))
 
-            (contains? kind :delete)
-            (let [embedding-store (:embedding-store system)]
-              (.removeAll embedding-store [path]))))
+            (= kind :delete)
+            (do
+              (log-if-server system :info {:event "file-deleted" :path path})
+              (let [embedding-store (:embedding-store system)]
+                (.removeAll embedding-store [path])))))
         (catch Exception e
-          (println "Error processing watch event for" path ":" (.getMessage e)))))))
+          (log-if-server system :error {:event "watch-error"
+                                        :path path
+                                        :error (.getMessage e)})
+          (.printStackTrace e))))))
 
 (defn- schedule-debounce-flush
   "Schedule a flush of pending events after debounce period."
@@ -114,7 +142,8 @@
       (reset! debounce-timer timer)
       (.schedule timer
                  (proxy [java.util.TimerTask] []
-                   (run []
+                   (run
+                     []
                      (try
                        (process-pending-events system)
                        (finally
@@ -134,7 +163,7 @@
           :path-spec path-spec})
   (schedule-debounce-flush system))
 
-;;; Watch setup
+;; Watch setup
 
 (defn- should-watch-recursively?
   "Determine if watching should be recursive based on path-spec segments."
@@ -188,15 +217,28 @@
         recursive? (should-watch-recursively? segments base-path)]
 
     (try
+      (log-if-server system :info {:event "watch-started"
+                                   :path watch-path
+                                   :recursive recursive?})
       (hawk/watch!
         [{:paths [watch-path]
           :filter (fn [ctx {:keys [file] :as event}]
-                    (and (hawk/file? ctx event)
-                         (matches-path-spec? (normalize-path (.getPath ^File file)) normalized-segments)))
+                    (let [is-file? (hawk/file? ctx event)
+                          file-path (normalize-path (.getPath ^File file))
+                          matches? (matches-path-spec? file-path normalized-segments)
+                          should-process? (and is-file? matches?)]
+                      (when (and is-file? (not matches?))
+                        (log-if-server system :info {:event "file-filtered-out"
+                                                     :path file-path
+                                                     :watch-path watch-path}))
+                      should-process?))
           :handler (fn [ctx event]
                      (debounce-event system (normalize-path (.getPath ^File (:file event))) event path-spec)
                      ctx)}])
       (catch Exception e
+        (log-if-server system :error {:event "watch-setup-failed"
+                                      :path base-path
+                                      :error (.getMessage e)})
         (binding [*out* *err*]
           (println "Failed to setup watch for" base-path ":" (.getMessage e)))
         nil))))
