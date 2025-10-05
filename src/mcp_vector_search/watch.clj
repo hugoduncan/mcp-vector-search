@@ -105,6 +105,7 @@
                                 :metadata metadata
                                 :embedding embedding
                                 :ingest ingest-strategy}]
+
                   (when (= kind :modify)
                     (log-if-server system :info {:event "file-modified" :path path})
                     ;; Remove old version before re-adding
@@ -214,6 +215,8 @@
                              normalized-base)
         ;; Parse the normalized pattern back into segments
         normalized-segments (:segments (config/parse-path-spec normalized-pattern))
+        ;; Create normalized path-spec for event processing
+        normalized-path-spec (assoc path-spec :segments normalized-segments)
         recursive? (should-watch-recursively? segments base-path)]
 
     (try
@@ -233,7 +236,7 @@
                                                      :watch-path watch-path}))
                       should-process?))
           :handler (fn [ctx event]
-                     (debounce-event system (normalize-path (.getPath ^File (:file event))) event path-spec)
+                     (debounce-event system (normalize-path (.getPath ^File (:file event))) event normalized-path-spec)
                      ctx)}])
       (catch Exception e
         (log-if-server system :error {:event "watch-setup-failed"
