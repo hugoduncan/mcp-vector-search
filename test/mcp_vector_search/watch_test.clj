@@ -2,6 +2,7 @@
   (:require
     [babashka.fs :as fs]
     [clojure.test :refer [deftest testing is]]
+    [hawk.core :as hawk]
     [mcp-vector-search.watch :as watch]
     [mcp-vector-search.config :as config])
   (:import
@@ -200,6 +201,74 @@
 
               (finally
                 (watch/stop-watches watchers)))))
+
+        (finally
+          (fs/delete-tree temp-dir)))))
+
+  (testing "watch filter and handler are called"
+    (let [temp-dir (fs/create-temp-dir)
+          filter-called (atom [])
+          handler-called (atom [])
+          system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                  :embedding-store (InMemoryEmbeddingStore.)
+                  :metadata-values (atom {})}
+          config {:watch? true
+                  :sources [{:path (str (fs/file temp-dir "*.md"))}]}
+          parsed-config (config/process-config config)]
+
+      (try
+        ;; Track filter and handler calls
+        (let [original-watch! hawk/watch!]
+          (with-redefs [hawk/watch!
+                        (fn [watch-specs]
+                          ;; Wrap the filter and handler to track calls
+                          (let [spec (first watch-specs)
+                                original-filter (:filter spec)
+                                original-handler (:handler spec)
+                                wrapped-spec (-> spec
+                                                 (assoc :filter
+                                                        (fn [ctx event]
+                                                          (let [result (original-filter ctx event)]
+                                                            (swap! filter-called conj
+                                                                   {:file (.getPath (:file event))
+                                                                    :result result})
+                                                            result)))
+                                                 (assoc :handler
+                                                        (fn [ctx event]
+                                                          (swap! handler-called conj
+                                                                 {:file (.getPath (:file event))})
+                                                          (original-handler ctx event))))]
+                            (original-watch! [wrapped-spec])))]
+
+          ;; Start the watch
+          (let [watchers (watch/start-watches system parsed-config)]
+
+            (try
+              ;; Give watch time to start
+              (Thread/sleep 200)
+
+              ;; Create a file
+              (let [test-file (fs/file temp-dir "test.md")]
+                (spit test-file "Test content"))
+
+              ;; Wait for processing
+              (Thread/sleep 1000)
+
+              ;; Check if filter was called
+              (is (pos? (count @filter-called))
+                  (str "Filter should be called. Filter calls: " @filter-called))
+
+              ;; Check if any filter calls returned true
+              (let [accepted (filter :result @filter-called)]
+                (is (pos? (count accepted))
+                    (str "At least one file should pass filter. Accepted: " accepted)))
+
+              ;; Check if handler was called
+              (is (pos? (count @handler-called))
+                  (str "Handler should be called. Handler calls: " @handler-called))
+
+              (finally
+                (watch/stop-watches watchers))))))
 
         (finally
           (fs/delete-tree temp-dir))))))
