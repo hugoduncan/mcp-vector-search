@@ -1,9 +1,14 @@
 (ns mcp-vector-search.watch-test
   (:require
+    [babashka.fs :as fs]
     [clojure.test :refer [deftest testing is]]
     [mcp-vector-search.watch :as watch]
     [mcp-vector-search.config :as config])
   (:import
+    (dev.langchain4j.model.embedding.onnx.allminilml6v2
+      AllMiniLmL6V2EmbeddingModel)
+    (dev.langchain4j.store.embedding.inmemory
+      InMemoryEmbeddingStore)
     (java.io
       File)))
 
@@ -117,4 +122,85 @@
                       {:type :literal :value ".md"}]
             base-path "/docs/"]
         (is (true? (#'watch/should-watch-recursively? segments base-path)))))))
+
+(deftest watch-event-firing-test
+  ;; Test that watch events actually fire when files are created/modified/deleted
+
+  (testing "watch fires on file creation"
+    (let [temp-dir (fs/create-temp-dir)
+          event-promise (promise)
+          system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                  :embedding-store (InMemoryEmbeddingStore.)
+                  :metadata-values (atom {})}
+          config {:watch? true
+                  :sources [{:path (str (fs/file temp-dir "*.md"))}]}
+          parsed-config (config/process-config config)]
+
+      (try
+        ;; Override debounce-event to deliver the promise when called
+        (with-redefs [watch/debounce-event
+                      (fn [_ path event _]
+                        (deliver event-promise {:path path :event event}))]
+
+          ;; Start the watch
+          (let [watchers (watch/start-watches system parsed-config)]
+
+            (try
+              ;; Create a file after a small delay to ensure watch is active
+              (Thread/sleep 100)
+              (let [test-file (fs/file temp-dir "test.md")]
+                (spit test-file "Test content"))
+
+              ;; Wait for the event with a 5 second timeout
+              (let [result (deref event-promise 5000 :timeout)]
+                (is (not= :timeout result) "Watch event should fire within 5 seconds")
+                (when (not= :timeout result)
+                  (is (string? (:path result)) "Event should have a path")
+                  (is (map? (:event result)) "Event should be a map")
+                  (is (contains? (:event result) :kind) "Event should have a :kind")))
+
+              (finally
+                (watch/stop-watches watchers)))))
+
+        (finally
+          (fs/delete-tree temp-dir)))))
+
+  (testing "watch fires on file modification"
+    (let [temp-dir (fs/create-temp-dir)
+          test-file (fs/file temp-dir "test.md")
+          _ (spit test-file "Initial content")
+          event-promise (promise)
+          system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                  :embedding-store (InMemoryEmbeddingStore.)
+                  :metadata-values (atom {})}
+          config {:watch? true
+                  :sources [{:path (str (fs/file temp-dir "*.md"))}]}
+          parsed-config (config/process-config config)]
+
+      (try
+        ;; Override debounce-event to deliver the promise when called
+        (with-redefs [watch/debounce-event
+                      (fn [_ path event _]
+                        (when (= :modify (:kind event))
+                          (deliver event-promise {:path path :event event})))]
+
+          ;; Start the watch
+          (let [watchers (watch/start-watches system parsed-config)]
+
+            (try
+              ;; Modify the file after a small delay
+              (Thread/sleep 100)
+              (spit test-file "Modified content")
+
+              ;; Wait for the event with a 5 second timeout
+              (let [result (deref event-promise 5000 :timeout)]
+                (is (not= :timeout result) "Watch event should fire on modification within 5 seconds")
+                (when (not= :timeout result)
+                  (is (= :modify (get-in result [:event :kind])) "Event kind should be :modify")))
+
+              (finally
+                (watch/stop-watches watchers)))))
+
+        (finally
+          (fs/delete-tree temp-dir))))))
 
