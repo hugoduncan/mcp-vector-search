@@ -42,6 +42,15 @@
              :watches nil}))
   @system)
 
+(defn set-server
+  "Set the MCP server in the system map.
+  Takes an MCP server instance.
+  Returns the updated system map."
+  [server]
+  (when @system
+    (swap! system assoc :server server))
+  @system)
+
 (defn start-watches
   "Start file watches for the system.
   Takes a processed config map.

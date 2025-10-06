@@ -24,7 +24,8 @@
   (try
     (log/info :vector-search-server {:msg "Starting"})
 
-    (let [system (lifecycle/start)
+    (let [config-path (str config-path)
+          system (lifecycle/start)
           cfg (config/read config-path)
           parsed-config (config/process-config cfg)]
 
@@ -36,7 +37,10 @@
       (let [search-tool (tools/search-tool system parsed-config)]
         (with-open [server (mcp-server/create-server
                              {:transport {:type :stdio}
-                              :tools {(:name search-tool) search-tool}})]
+                              :tools {(:name search-tool) search-tool}
+                              :capabilities {:logging {}}})]
+          ;; Add server to system for logging access
+          (lifecycle/set-server server)
           (log/info :vector-search-server {:msg "Started"})
           (.addShutdownHook
             (Runtime/getRuntime)
@@ -48,6 +52,7 @@
           @(promise))))
     (catch Exception e
       (log/error :vector-search-server {:error (.getMessage e)})
+      (.printStackTrace e)
       (System/exit 1))))
 
 (defn -main
