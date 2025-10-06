@@ -200,36 +200,45 @@
   Returns a hawk watcher handle."
   [system path-spec]
   (let [{:keys [base-path segments]} path-spec
-        ;; Normalize base-path to handle symlinks (e.g., /var -> /private/var on macOS)
-        normalized-base (normalize-path base-path)
+        ;; Convert relative paths to absolute, then normalize to handle symlinks
+        base-file-for-absolute (io/file base-path)
+        absolute-base (if (.isAbsolute base-file-for-absolute)
+                        base-path
+                        (.getCanonicalPath base-file-for-absolute))
+        ;; Normalize to handle symlinks (e.g., /var -> /private/var on macOS)
+        normalized-base (normalize-path absolute-base)
         base-file (io/file normalized-base)
         watch-path (if (.isFile base-file)
                      (.getParent base-file)
                      normalized-base)
-        ;; Build normalized pattern by substituting normalized base for original base
-        original-base (str/join (map :value (take-while #(= :literal (:type %)) segments)))
+        ;; Build pattern using absolute normalized base
+        ;; First, determine what the original literal prefix would be as absolute
+        original-relative-base (str/join (map :value (take-while #(= :literal (:type %)) segments)))
         ;; Preserve trailing separator if present
-        has-trailing-sep? (str/ends-with? original-base "/")
+        has-trailing-sep? (str/ends-with? original-relative-base "/")
         normalized-base-with-sep (if (and has-trailing-sep?
                                          (not (str/ends-with? normalized-base "/")))
                                    (str normalized-base "/")
                                    normalized-base)
+        ;; Build the full pattern string from segments
+        relative-pattern-str (str/join (mapv (fn [{:keys [type] :as segment}]
+                                                (case type
+                                                  :literal (:value segment)
+                                                  :glob (case (:pattern segment)
+                                                          "**" "**"
+                                                          "*" "*")
+                                                  :capture (str "(?<" (:name segment) ">" (:pattern segment) ")")))
+                                              segments))
+        ;; Replace the relative base with the absolute normalized base
         normalized-pattern (str/replace-first
-                             (str/join (mapv (fn [{:keys [type] :as segment}]
-                                               (case type
-                                                 :literal (:value segment)
-                                                 :glob (case (:pattern segment)
-                                                         "**" "**"
-                                                         "*" "*")
-                                                 :capture (str "(?<" (:name segment) ">" (:pattern segment) ")")))
-                                             segments))
-                             original-base
+                             relative-pattern-str
+                             original-relative-base
                              normalized-base-with-sep)
         ;; Parse the normalized pattern back into segments
         normalized-segments (:segments (config/parse-path-spec normalized-pattern))
         ;; Create normalized path-spec for event processing
         normalized-path-spec (assoc path-spec :segments normalized-segments)
-        recursive? (should-watch-recursively? segments base-path)]
+        recursive? (should-watch-recursively? normalized-segments normalized-base)]
 
     (try
       (log-if-server system :info {:event "watch-started"
@@ -252,7 +261,7 @@
                      ctx)}])
       (catch Exception e
         (log-if-server system :error {:event "watch-setup-failed"
-                                      :path base-path
+                                      :path normalized-base
                                       :error (.getMessage e)})
         (binding [*out* *err*]
           (println "Failed to setup watch for" base-path ":" (.getMessage e)))
