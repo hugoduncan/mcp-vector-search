@@ -78,15 +78,13 @@
 (defn- process-pending-events
   "Process all pending debounced events."
   [system]
-  (let [events-to-process
+  (let [[old-state _new-state] (swap-vals! debounce-state (constantly {}))
+        events-to-process
         (reduce-kv
           (fn [acc path {:keys [event path-spec]}]
             (conj acc {:path path :event event :path-spec path-spec}))
           []
-          @debounce-state)]
-
-    ;; Clear all pending events
-    (reset! debounce-state {})
+          old-state)]
 
     ;; Process each event
     (doseq [{:keys [path event path-spec]} events-to-process]
