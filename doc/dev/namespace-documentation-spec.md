@@ -1,7 +1,7 @@
 # Namespace Documentation Specification
 
 This document defines the standard format for documenting Clojure
-namespaces in the Chat-Rama project.
+namespaces in the project.
 
 ## Overview
 
