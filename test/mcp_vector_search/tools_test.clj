@@ -48,7 +48,7 @@
         (let [config {:description "Test search"}
               tool (sut/search-tool system config)
               impl (:implementation tool)
-              result (impl {:query "sports" :limit 2})]
+              result (impl nil {:query "sports" :limit 2})]
           (is (map? result))
           (is (false? (:isError result)))
           (is (vector? (:content result)))
@@ -79,7 +79,7 @@
         (let [config {:description "Test search"}
               tool (sut/search-tool system config)
               impl (:implementation tool)
-              result (impl {:query "doc" :limit 3})]
+              result (impl nil {:query "doc" :limit 3})]
           (is (false? (:isError result)))
           (let [content-text (-> result :content first :text)
                 parsed-results (json/read-str content-text)]
@@ -97,7 +97,7 @@
         (let [config {:description "Test search"}
               tool (sut/search-tool system config)
               impl (:implementation tool)
-              result (impl {:query "test"})]
+              result (impl nil {:query "test"})]
           (is (false? (:isError result)))
           (is (vector? (:content result))))))
 
@@ -107,7 +107,7 @@
             config {:description "Test search"}
             tool (sut/search-tool system config)
             impl (:implementation tool)
-            result (impl {:query "test"})]
+            result (impl nil {:query "test"})]
         (is (true? (:isError result)))
         (is (vector? (:content result)))
         (is (string? (-> result :content first :text)))
@@ -138,7 +138,7 @@
         (let [config {:description "Test search"}
               tool (sut/search-tool system config)
               impl (:implementation tool)
-              result (impl {:query "content" :metadata {"category" "ai"}})]
+              result (impl nil {:query "content" :metadata {"category" "ai"}})]
           (is (false? (:isError result)))
           (let [content-text (-> result :content first :text)
                 parsed-results (json/read-str content-text)]
@@ -172,7 +172,7 @@
         (let [config {:description "Test search"}
               tool (sut/search-tool system config)
               impl (:implementation tool)
-              result (impl {:query "text" :metadata {"category" "ai" "author" "bob"}})]
+              result (impl nil {:query "text" :metadata {"category" "ai" "author" "bob"}})]
           (is (false? (:isError result)))
           (let [content-text (-> result :content first :text)
                 parsed-results (json/read-str content-text)]
