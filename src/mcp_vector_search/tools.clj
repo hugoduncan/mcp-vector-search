@@ -11,7 +11,8 @@
   Metadata filters use LangChain4j `IsEqualTo` comparisons combined with AND
   logic. Search results include both content and similarity scores."
   (:require
-    [clojure.data.json :as json])
+    [clojure.data.json :as json]
+    [mcp-clj.mcp-server.logging :as logging])
   (:import
     (dev.langchain4j.data.embedding
       Embedding)
@@ -114,8 +115,9 @@
                         :default     10}
                        "metadata" metadata-schema}
                       :required ["query"]}
-     :implementation (fn [server {:keys [query limit metadata]}]
+     :implementation (fn [context {:keys [query limit metadata]}]
                        (try
+                         (logging/info context {:query query})
                          (let [{:keys [embedding-model embedding-store]}
                                system
                                max-results     (or limit 10)
