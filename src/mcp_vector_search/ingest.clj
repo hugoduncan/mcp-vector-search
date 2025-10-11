@@ -20,11 +20,20 @@
   (:import
     (dev.langchain4j.data.document
       Metadata)
+    (dev.langchain4j.data.embedding
+      Embedding)
     (dev.langchain4j.data.segment
       TextSegment)
+    (dev.langchain4j.model.embedding
+      EmbeddingModel)
+    (dev.langchain4j.store.embedding
+      EmbeddingStore)
+    (dev.langchain4j.store.embedding.inmemory
+      InMemoryEmbeddingStore)
     (java.io
       File)
     (java.util.regex
+      Matcher
       Pattern)))
 
 (defn- build-pattern
@@ -46,12 +55,12 @@
 (defn- extract-captures
   "Extract named group captures from a regex matcher.
   Returns a map of capture name to captured value."
-  [matcher segments]
+  [^Matcher matcher segments]
   (let [capture-names (keep #(when (= :capture (:type %))
                                (:name %))
                             segments)]
     (into {}
-          (map (fn [name]
+          (map (fn [^String name]
                  [(keyword name) (.group matcher name)])
                capture-names))))
 
@@ -160,7 +169,7 @@
 (defn- embed-whole-document
   "Embedding strategy: embed entire document as single segment.
   Returns map with :embedding-response and :segment."
-  [embedding-model content metadata path]
+  [^EmbeddingModel embedding-model content metadata path]
   (let [metadata-with-id (assoc metadata :doc-id path)
         string-metadata (into {} (map (fn [[k v]] [(name k) v]) metadata-with-id))
         lc4j-metadata   (Metadata/from string-metadata)
@@ -173,11 +182,14 @@
 (defn- ingest-whole-document
   "Ingest strategy: add single embedding to store.
   Returns nil on success."
-  [embedding-store embedding-result]
-  (let [embedding (.content (:embedding-response embedding-result))
+  [^EmbeddingStore embedding-store embedding-result]
+  (let [^Embedding embedding (.content ^dev.langchain4j.model.output.Response (:embedding-response embedding-result))
         segment (:segment embedding-result)
-        doc-id (:path embedding-result)]
-    (.add embedding-store doc-id embedding segment)))
+        ^String doc-id (:path embedding-result)]
+    (.add ^dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore embedding-store
+          doc-id
+          embedding
+          segment)))
 
 (defmulti embed-content
   "Dispatch embedding based on strategy.
@@ -189,7 +201,7 @@
   (embed-whole-document embedding-model content metadata path))
 
 (defmethod embed-content :namespace-doc
-  [_strategy embedding-model content metadata path]
+  [_strategy ^EmbeddingModel embedding-model content metadata path]
   (let [ns-form (parse/parse-first-ns-form content)]
     (when-not ns-form
       (throw (ex-info "No ns form found" {})))
@@ -221,15 +233,18 @@
   (ingest-whole-document embedding-store embedding-result))
 
 (defmethod ingest-segments :file-path
-  [_strategy embedding-store embedding-result]
-  (let [embedding (.content (:embedding-response embedding-result))
+  [_strategy ^EmbeddingStore embedding-store embedding-result]
+  (let [^Embedding embedding (.content ^dev.langchain4j.model.output.Response (:embedding-response embedding-result))
         ;; Get metadata from the original segment (which has all metadata from embedding phase)
-        original-segment (:segment embedding-result)
+        ^TextSegment original-segment (:segment embedding-result)
         original-metadata (.metadata original-segment)
         ;; Create new segment with just the path as content, preserving metadata
-        path (:path embedding-result)
+        ^String path (:path embedding-result)
         path-segment (TextSegment/from path original-metadata)]
-    (.add embedding-store path embedding path-segment)))
+    (.add ^dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore embedding-store
+          path
+          embedding
+          path-segment)))
 
 (defn ingest-file
   "Ingest a single file into the embedding store.

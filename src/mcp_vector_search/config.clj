@@ -38,7 +38,7 @@
   "Parse a path spec string into segments.
   Returns a vector of segment maps with :type and type-specific keys."
   [path-str]
-  (loop [remaining path-str
+  (loop [^String remaining path-str
          segments  []]
     (if (empty? remaining)
       segments
@@ -94,7 +94,8 @@
 
         ;; Literal text - collect until next special
         :else
-        (let [indices      (keep #(let [idx (.indexOf remaining %)]
+        (let [indices      (keep #(let [^String s %
+                                        idx (.indexOf remaining s)]
                                     (when (>= idx 0) idx))
                                  ["(?<" "**" "*"])
               next-special (when (seq indices) (apply min indices))

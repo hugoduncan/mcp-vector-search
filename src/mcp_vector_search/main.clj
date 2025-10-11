@@ -7,8 +7,8 @@
   creation. Handles shutdown hooks to ensure clean resource cleanup."
   (:gen-class)
   (:require
-    [mcp-clj.log :as log]
     [mcp-clj.mcp-server.core :as mcp-server]
+    [mcp-clj.mcp-server.logging :as log]
     [mcp-vector-search.config :as config]
     [mcp-vector-search.ingest :as ingest]
     [mcp-vector-search.lifecycle :as lifecycle]
@@ -22,8 +22,6 @@
   Takes a config file path or uses default config."
   [{:keys [config-path] :or {config-path default-config-path}}]
   (try
-    (log/info :vector-search-server {:msg "Starting"})
-
     (let [config-path (str config-path)
           system (lifecycle/start)
           cfg (config/read config-path)
@@ -41,11 +39,11 @@
                               :capabilities {:logging {}}})]
           ;; Add server to system for logging access
           (lifecycle/set-server server)
-          (log/info :vector-search-server {:msg "Started"})
+          (log/info server :vector-search-server {:msg "Started"})
           (.addShutdownHook
             (Runtime/getRuntime)
             (Thread. #(do
-                        (log/info :shutting-down-vector-search-server)
+                        (log/info server :shutting-down-vector-search-server)
                         (lifecycle/stop)
                         ((:stop server)))))
           ;; Keep the main thread alive

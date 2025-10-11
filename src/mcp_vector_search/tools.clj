@@ -13,8 +13,16 @@
   (:require
     [clojure.data.json :as json])
   (:import
+    (dev.langchain4j.data.embedding
+      Embedding)
+    (dev.langchain4j.data.segment
+      TextSegment)
+    (dev.langchain4j.model.embedding
+      EmbeddingModel)
     (dev.langchain4j.store.embedding
-      EmbeddingSearchRequest)
+      EmbeddingMatch
+      EmbeddingSearchRequest
+      EmbeddingStore)
     (dev.langchain4j.store.embedding.filter
       Filter)
     (dev.langchain4j.store.embedding.filter.comparison
@@ -23,10 +31,9 @@
 (defn- embed-query
   "Embed a query string using the embedding model.
   Returns the embedding vector."
-  [embedding-model query]
-  (-> embedding-model
-      (.embed query)
-      (.content)))
+  [^EmbeddingModel embedding-model ^String query]
+  (let [response (.embed embedding-model query)]
+    (.content ^dev.langchain4j.model.output.Response response)))
 
 (defn- build-metadata-filter
   "Build a metadata filter from a map of key-value pairs.
@@ -43,7 +50,7 @@
   "Search the embedding store for similar documents.
   Optionally filters by metadata.
   Returns a list of EmbeddingMatch objects."
-  [embedding-store query-embedding max-results metadata-filter]
+  [^EmbeddingStore embedding-store ^Embedding query-embedding max-results metadata-filter]
   (let [builder (-> (EmbeddingSearchRequest/builder)
                     (.queryEmbedding query-embedding)
                     (.maxResults (int max-results)))
@@ -53,15 +60,16 @@
         request (.build builder)]
     (-> embedding-store
         (.search request)
-        (.matches))))
+        ^dev.langchain4j.store.embedding.EmbeddingSearchResult .matches)))
 
 (defn- format-search-results
   "Format search results as a JSON string.
   Each result contains content and score."
   [matches]
-  (let [results (mapv (fn [match]
-                        {"content" (-> match .embedded .text)
-                         "score" (.score match)})
+  (let [results (mapv (fn [^EmbeddingMatch match]
+                        (let [^TextSegment embedded (.embedded match)]
+                          {"content" (.text embedded)
+                           "score" (.score match)}))
                       matches)]
     (json/write-str results)))
 
@@ -106,7 +114,7 @@
                         :default     10}
                        "metadata" metadata-schema}
                       :required ["query"]}
-     :implementation (fn [{:keys [query limit metadata]}]
+     :implementation (fn [server {:keys [query limit metadata]}]
                        (try
                          (let [{:keys [embedding-model embedding-store]}
                                system

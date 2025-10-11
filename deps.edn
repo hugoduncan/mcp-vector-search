@@ -1,7 +1,7 @@
 {:paths ["src"]
  :deps  {io.github.hugoduncan/mcp-clj
          {:git/url   "https://github.com/hugoduncan/mcp-clj"
-          :git/sha   "77ca1a2df2c9d261a127272417e92e0728b528fd"
+          :git/sha   "66b7c92e45f23f66d940eba636cf64040be3b2cf"
           :deps/root "projects/server"}
 
          dev.langchain4j/langchain4j

@@ -20,9 +20,14 @@
     [mcp-vector-search.config :as config]
     [mcp-vector-search.ingest :as ingest])
   (:import
+    (dev.langchain4j.store.embedding
+      EmbeddingStore)
     (java.io
       File)
+    (java.util
+      Timer)
     (java.util.regex
+      Matcher
       Pattern)))
 
 ;; Debouncing
@@ -51,12 +56,12 @@
 (defn- extract-captures
   "Extract named group captures from a regex matcher.
   Returns a map of capture name to captured value."
-  [matcher segments]
+  [^Matcher matcher segments]
   (let [capture-names (keep #(when (= :capture (:type %))
                                (:name %))
                             segments)]
     (into {}
-          (map (fn [name]
+          (map (fn [^String name]
                  [(keyword name) (.group matcher name)])
                capture-names))))
 
@@ -112,8 +117,8 @@
                       :info
                       {:event "file-modified" :path path})
                     ;; Remove old version before re-adding
-                    (let [embedding-store (:embedding-store system)]
-                      (.removeAll embedding-store [path])))
+                    (let [^EmbeddingStore embedding-store (:embedding-store system)]
+                      (.removeAll embedding-store (java.util.Arrays/asList (into-array String [path])))))
                   (when (= kind :create)
                     (log-if-server
                       system
@@ -132,8 +137,8 @@
             (= kind :delete)
             (do
               (log-if-server system :info {:event "file-deleted" :path path})
-              (let [embedding-store (:embedding-store system)]
-                (.removeAll embedding-store [path])))))
+              (let [^EmbeddingStore embedding-store (:embedding-store system)]
+                (.removeAll embedding-store (java.util.Arrays/asList (into-array String [path])))))))
         (catch Exception e
           (log-if-server system :error {:event "watch-error"
                                         :path path
@@ -288,7 +293,7 @@
         (println "Error stopping watch:" (.getMessage e)))))
 
   ;; Cancel debounce timer
-  (when-let [timer @debounce-timer]
+  (when-let [^Timer timer @debounce-timer]
     (.cancel timer)
     (reset! debounce-timer nil))
 
