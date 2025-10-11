@@ -8,7 +8,6 @@
   (:gen-class)
   (:require
     [mcp-clj.mcp-server.core :as mcp-server]
-    [mcp-clj.mcp-server.logging :as log]
     [mcp-vector-search.config :as config]
     [mcp-vector-search.ingest :as ingest]
     [mcp-vector-search.lifecycle :as lifecycle]
@@ -39,17 +38,16 @@
                               :capabilities {:logging {}}})]
           ;; Add server to system for logging access
           (lifecycle/set-server server)
-          (log/info server :vector-search-server {:msg "Started"})
           (.addShutdownHook
             (Runtime/getRuntime)
             (Thread. #(do
-                        (log/info server :shutting-down-vector-search-server)
                         (lifecycle/stop)
                         ((:stop server)))))
           ;; Keep the main thread alive
           @(promise))))
     (catch Exception e
-      (log/error :vector-search-server {:error (.getMessage e)})
+      (binding [*out* *err*]
+        (println  "Unexpected error:" (.getMessage e)))
       (.printStackTrace e)
       (System/exit 1))))
 
