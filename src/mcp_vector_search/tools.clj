@@ -117,7 +117,8 @@
                       :required ["query"]}
      :implementation (fn [context {:keys [query limit metadata]}]
                        (try
-                         (logging/info context {:query query})
+                         (when (and context (:server context))
+                           (logging/info context {:query query}))
                          (let [{:keys [embedding-model embedding-store]}
                                system
                                max-results     (or limit 10)

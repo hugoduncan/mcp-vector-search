@@ -10,7 +10,9 @@
   Uses hawk library for filesystem watching. Events are debounced (500ms) to
   avoid excessive re-indexing when multiple rapid changes occur. Path
   normalization handles symlinks (e.g., /var -> /private/var on macOS).
-  Modified files have old embeddings removed by `:doc-id` before re-indexing."
+  Modified and deleted files have all segments removed by querying file-id
+  metadata and extracting internal IDs. This supports multi-segment files where
+  multiple embeddings share the same file-id."
   (:refer-clojure :exclude [file?])
   (:require
     [clojure.java.io :as io]
@@ -20,8 +22,15 @@
     [mcp-vector-search.config :as config]
     [mcp-vector-search.ingest :as ingest])
   (:import
+    (dev.langchain4j.data.segment
+      TextSegment)
+    (dev.langchain4j.model.embedding
+      EmbeddingModel)
     (dev.langchain4j.store.embedding
+      EmbeddingSearchRequest
       EmbeddingStore)
+    (dev.langchain4j.store.embedding.filter.comparison
+      IsEqualTo)
     (java.io
       File)
     (java.util
@@ -75,6 +84,34 @@
       :error (logging/error server data :logger "watch")
       :debug (logging/debug server data :logger "watch"))))
 
+(defn- remove-by-file-id
+  "Remove all embeddings with the given file-id from the embedding store.
+
+  Searches for all embeddings with matching file-id metadata, extracts their
+  internal IDs, and removes them. This handles multi-segment files where
+  multiple embeddings share the same file-id.
+
+  Returns the number of embeddings removed."
+  [^EmbeddingStore embedding-store ^EmbeddingModel embedding-model file-id]
+  (let [;; Create a dummy query embedding for search (similarity doesn't matter)
+        dummy-query (.content (.embed embedding-model (TextSegment/from "dummy")))
+        ;; Create metadata filter for file-id
+        metadata-filter (IsEqualTo. "file-id" file-id)
+        ;; Search with large max results to get all matches
+        request (-> (EmbeddingSearchRequest/builder)
+                    (.queryEmbedding dummy-query)
+                    (.maxResults (int 10000))
+                    (.filter metadata-filter)
+                    (.build))
+        matches (-> embedding-store
+                    (.search request)
+                    .matches)
+        ;; Extract internal IDs from matches
+        ids (mapv #(.embeddingId %) matches)]
+    (when (seq ids)
+      (.removeAll embedding-store ids))
+    (count ids)))
+
 (defn- process-pending-events
   "Process all pending debounced events."
   [system]
@@ -95,8 +132,7 @@
             (#{:create :modify} kind)
             (let [file (io/file path)
                   base-metadata (:base-metadata path-spec)
-                  embedding (:embedding path-spec)
-                  ingest-strategy (:ingest path-spec)
+                  pipeline (:pipeline path-spec)
                   pattern (build-pattern (:segments path-spec))
                   matcher (re-matcher pattern path)]
               (if (.matches matcher)
@@ -106,17 +142,21 @@
                                 :path path
                                 :captures captures
                                 :metadata metadata
-                                :embedding embedding
-                                :ingest ingest-strategy}]
+                                :pipeline pipeline}]
 
                   (when (= kind :modify)
                     (log-if-server
                       system
                       :info
                       {:event "file-modified" :path path})
-                    ;; Remove old version before re-adding
-                    (let [^EmbeddingStore embedding-store (:embedding-store system)]
-                      (.removeAll embedding-store (java.util.Arrays/asList (into-array String [path])))))
+                    ;; Remove all segments with this file-id before re-adding
+                    (let [embedding-store (:embedding-store system)
+                          embedding-model (:embedding-model system)
+                          removed-count (remove-by-file-id embedding-store embedding-model path)]
+                      (log-if-server
+                        system
+                        :info
+                        {:event "segments-removed" :file-id path :count removed-count})))
                   (when (= kind :create)
                     (log-if-server
                       system
@@ -135,8 +175,13 @@
             (= kind :delete)
             (do
               (log-if-server system :info {:event "file-deleted" :path path})
-              (let [^EmbeddingStore embedding-store (:embedding-store system)]
-                (.removeAll embedding-store (java.util.Arrays/asList (into-array String [path])))))))
+              (let [embedding-store (:embedding-store system)
+                    embedding-model (:embedding-model system)
+                    removed-count (remove-by-file-id embedding-store embedding-model path)]
+                (log-if-server
+                  system
+                  :info
+                  {:event "segments-removed" :file-id path :count removed-count})))))
         (catch Exception e
           (log-if-server system :error {:event "watch-error"
                                         :path path

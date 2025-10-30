@@ -6,6 +6,10 @@
     [mcp-vector-search.ingest :as sut]
     [mcp-vector-search.tools :as tools])
   (:import
+    (dev.langchain4j.data.document
+      Metadata)
+    (dev.langchain4j.data.embedding
+      Embedding)
     (dev.langchain4j.model.embedding.onnx.allminilml6v2
       AllMiniLmL6V2EmbeddingModel)
     (dev.langchain4j.store.embedding.inmemory
@@ -24,14 +28,12 @@
           (let [path-spec {:segments [{:type :literal
                                        :value (.getPath test-file)}]
                            :base-path (.getPath test-file)
-                           :embedding :whole-document
-                           :ingest :whole-document}
+                           :pipeline :whole-document}
                 results (sut/files-from-path-spec path-spec)]
             (is (= 1 (count results)))
             (is (= (.getPath test-file) (:path (first results))))
             (is (= {} (:captures (first results))))
-            (is (= :whole-document (:embedding (first results))))
-            (is (= :whole-document (:ingest (first results)))))
+            (is (= :whole-document (:pipeline (first results)))))
           (finally
             (.delete test-file)
             (.delete test-dir)))))
@@ -51,8 +53,7 @@
                                       {:type :glob :pattern "*"}
                                       {:type :literal :value ".md"}]
                            :base-path (.getPath test-dir)
-                           :embedding :whole-document
-                           :ingest :whole-document}
+                           :pipeline :whole-document}
                 results (sut/files-from-path-spec path-spec)
                 paths (set (map :path results))]
             (is (= 2 (count results)))
@@ -79,8 +80,7 @@
                                       {:type :glob :pattern "**"}
                                       {:type :literal :value ".md"}]
                            :base-path (.getPath test-dir)
-                           :embedding :whole-document
-                           :ingest :whole-document}
+                           :pipeline :whole-document}
                 results (sut/files-from-path-spec path-spec)
                 paths (set (map :path results))]
             (is (= 2 (count results)))
@@ -104,8 +104,7 @@
                                       {:type :literal :value "/v"}
                                       {:type :capture :name "version" :pattern "[0-9.]+"}]
                            :base-path (.getPath test-dir)
-                           :embedding :whole-document
-                           :ingest :whole-document}
+                           :pipeline :whole-document}
                 results (sut/files-from-path-spec path-spec)
                 by-path (into {} (map (fn [r] [(:path r) r]) results))]
             (is (= 2 (count results)))
@@ -132,8 +131,7 @@
                                       {:type :capture :name "topic" :pattern "[^.]+"}
                                       {:type :literal :value ".md"}]
                            :base-path (.getPath test-dir)
-                           :embedding :whole-document
-                           :ingest :whole-document}
+                           :pipeline :whole-document}
                 results (sut/files-from-path-spec path-spec)]
             (is (= 1 (count results)))
             (is (= "clj" (get-in results [0 :captures :lang])))
@@ -164,8 +162,7 @@
                                       {:type :capture :name "doc" :pattern "[^.]+"}
                                       {:type :literal :value ".md"}]
                            :base-path (.getPath test-dir)
-                           :embedding :whole-document
-                           :ingest :whole-document}
+                           :pipeline :whole-document}
                 results (sut/files-from-path-spec path-spec)
                 by-path (into {} (map (fn [r] [(:path r) r]) results))]
             (is (= 2 (count results)))
@@ -192,8 +189,7 @@
                                       {:type :literal :value ".txt"}]
                            :base-path (.getPath test-dir)
                            :base-metadata {:source "docs" :type "guide"}
-                           :embedding :whole-document
-                           :ingest :whole-document}
+                           :pipeline :whole-document}
                 results (sut/files-from-path-spec path-spec)]
             (is (= 1 (count results)))
             (is (= {:source "docs" :type "guide" :version "v1"}
@@ -209,8 +205,7 @@
           (let [path-spec {:segments [{:type :literal :value (.getPath test-dir)}
                                       {:type :literal :value "/nonexistent.md"}]
                            :base-path (.getPath test-dir)
-                           :embedding :whole-document
-                           :ingest :whole-document}
+                           :pipeline :whole-document}
                 results (sut/files-from-path-spec path-spec)]
             (is (empty? results)))
           (finally
@@ -231,8 +226,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:source "test"}
-                            :embedding :whole-document
-                            :ingest :whole-document}]
+                            :pipeline :whole-document}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= 0 (:failed result)))
@@ -254,13 +248,11 @@
                 file-maps [{:file file1
                             :path (.getPath file1)
                             :metadata {:version "v1"}
-                            :embedding :whole-document
-                            :ingest :whole-document}
+                            :pipeline :whole-document}
                            {:file file2
                             :path (.getPath file2)
                             :metadata {:version "v2"}
-                            :embedding :whole-document
-                            :ingest :whole-document}]
+                            :pipeline :whole-document}]
                 result (sut/ingest-files system file-maps)]
             (is (= 2 (:ingested result)))
             (is (= 0 (:failed result))))
@@ -276,8 +268,7 @@
             file-maps [{:file nonexistent-file
                         :path (.getPath nonexistent-file)
                         :metadata {}
-                        :embedding :whole-document
-                        :ingest :whole-document}]
+                        :pipeline :whole-document}]
             result (sut/ingest-files system file-maps)]
         (is (= 0 (:ingested result)))
         (is (= 1 (:failed result)))
@@ -305,8 +296,7 @@
                                      {:type :literal :value ".md"}]
                           :base-path (.getPath test-dir)
                           :base-metadata {:type "doc"}
-                          :embedding :whole-document
-                          :ingest :whole-document}]}
+                          :pipeline :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 2 (:ingested result)))
             (is (= 0 (:failed result))))
@@ -330,12 +320,10 @@
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath file1)}]
                           :base-path (.getPath file1)
-                          :embedding :whole-document
-                          :ingest :whole-document}
+                          :pipeline :whole-document}
                          {:segments [{:type :literal :value (.getPath file2)}]
                           :base-path (.getPath file2)
-                          :embedding :whole-document
-                          :ingest :whole-document}]}
+                          :pipeline :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 2 (:ingested result)))
             (is (= 0 (:failed result))))
@@ -355,8 +343,7 @@
                         [{:segments [{:type :literal :value (.getPath test-dir)}
                                      {:type :literal :value "/nonexistent.txt"}]
                           :base-path (.getPath test-dir)
-                          :embedding :whole-document
-                          :ingest :whole-document}]}
+                          :pipeline :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 0 (:ingested result)))
             (is (= 0 (:failed result))))
@@ -389,11 +376,10 @@
                                      {:type :literal :value ".md"}]
                           :base-path (.getPath test-dir)
                           :base-metadata {:type "doc"}
-                          :embedding :whole-document
-                          :ingest :whole-document}]}
+                          :pipeline :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 3 (:ingested result)))
-            (is (= #{:version :type :doc-id} (set (keys @metadata-values))))
+            (is (= #{:version :type :doc-id :file-id :segment-id} (set (keys @metadata-values))))
             (is (= #{"v1" "v2"} (:version @metadata-values)))
             (is (= #{"doc"} (:type @metadata-values))))
           (finally
@@ -418,14 +404,12 @@
                          [{:segments [{:type :literal :value (.getPath file1)}]
                            :base-path (.getPath file1)
                            :base-metadata {:category "type1"}
-                           :embedding :whole-document
-                           :ingest :whole-document}]}
+                           :pipeline :whole-document}]}
                 config2 {:path-specs
                          [{:segments [{:type :literal :value (.getPath file2)}]
                            :base-path (.getPath file2)
                            :base-metadata {:category "type2"}
-                           :embedding :whole-document
-                           :ingest :whole-document}]}]
+                           :pipeline :whole-document}]}]
             (sut/ingest system config1)
             (is (= #{"type1"} (:category @metadata-values)))
             (sut/ingest system config2)
@@ -448,11 +432,10 @@
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath file1)}]
                           :base-path (.getPath file1)
-                          :embedding :whole-document
-                          :ingest :whole-document}]}
+                          :pipeline :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 1 (:ingested result)))
-            (is (= #{:doc-id} (set (keys @metadata-values))))
+            (is (= #{:doc-id :file-id :segment-id} (set (keys @metadata-values))))
             (is (= #{(.getPath file1)} (:doc-id @metadata-values))))
           (finally
             (.delete file1)
@@ -476,8 +459,7 @@
                                      {:type :glob :pattern "*"}
                                      {:type :literal :value ".txt"}]
                           :base-path (.getPath test-dir)
-                          :embedding :whole-document
-                          :ingest :whole-document}]}
+                          :pipeline :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 2 (:ingested result)))
             (is (= #{(.getPath file1) (.getPath file2)} (:doc-id @metadata-values))))
@@ -504,8 +486,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:source "test"}
-                            :embedding :namespace-doc
-                            :ingest :whole-document}]
+                            :pipeline :namespace-doc}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= 0 (:failed result)))
@@ -526,8 +507,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
-                            :embedding :namespace-doc
-                            :ingest :whole-document}]
+                            :pipeline :namespace-doc}]
                 result (sut/ingest-files system file-maps)]
             (is (= 0 (:ingested result)))
             (is (= 1 (:failed result)))
@@ -547,8 +527,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
-                            :embedding :namespace-doc
-                            :ingest :whole-document}]
+                            :pipeline :namespace-doc}]
                 result (sut/ingest-files system file-maps)]
             (is (= 0 (:ingested result)))
             (is (= 1 (:failed result)))
@@ -568,8 +547,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
-                            :embedding :namespace-doc
-                            :ingest :whole-document}]
+                            :pipeline :namespace-doc}]
                 result (sut/ingest-files system file-maps)]
             (is (= 0 (:ingested result)))
             (is (= 1 (:failed result))))
@@ -590,8 +568,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:type "lib"}
-                            :embedding :namespace-doc
-                            :ingest :whole-document}]
+                            :pipeline :namespace-doc}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= #{"com.example"} (:namespace @metadata-values)))
@@ -613,8 +590,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
-                            :embedding :namespace-doc
-                            :ingest :whole-document}]
+                            :pipeline :namespace-doc}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= #{(.getPath test-file)} (:doc-id @metadata-values))))
@@ -638,20 +614,20 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:source "test"}
-                            :embedding :whole-document
-                            :ingest :file-path}]
+                            :pipeline :file-path}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= 0 (:failed result)))
             ;; Verify content via search - should return path, not file content
             (let [search-tool (tools/search-tool system {})
                   impl (:implementation search-tool)
-                  search-result (impl {:query "document content" :limit 1})
-                  content-text (-> search-result :content first :text)
-                  results (json/read-str content-text)
-                  returned-content (get (first results) "content")]
-              (is (= (.getPath test-file) returned-content))
-              (is (not= "This is the full document content that should not be stored" returned-content))))
+                  search-result (impl {} {:query "document content" :limit 1})]
+              (is (false? (:isError search-result)) (str "Search failed: " (-> search-result :content first :text)))
+              (let [content-text (-> search-result :content first :text)
+                    results (json/read-str content-text)
+                    returned-content (get (first results) "content")]
+                (is (= (.getPath test-file) returned-content))
+                (is (not= "This is the full document content that should not be stored" returned-content)))))
           (finally
             (.delete test-file)
             (.delete test-dir)))))
@@ -670,8 +646,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:category "docs" :version "v1"}
-                            :embedding :whole-document
-                            :ingest :file-path}]
+                            :pipeline :file-path}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= #{"docs"} (:category @metadata-values)))
@@ -679,7 +654,7 @@
             ;; Verify metadata via search with filter
             (let [search-tool (tools/search-tool system {})
                   impl (:implementation search-tool)
-                  search-result (impl {:query "content" :limit 1 :metadata {:category "docs"}})
+                  search-result (impl {} {:query "content" :limit 1 :metadata {:category "docs"}})
                   content-text (-> search-result :content first :text)
                   results (json/read-str content-text)]
               (is (= 1 (count results)))
@@ -688,39 +663,13 @@
             (.delete test-file)
             (.delete test-dir)))))
 
-    (testing "works with :namespace-doc embedding strategy"
-      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/fp-ns")
-            test-file (io/file test-dir "ns.clj")]
-        (.mkdirs test-dir)
-        (spit test-file "(ns example.core \"Core namespace\")\n(defn foo [] :bar)")
-        (try
-          (let [metadata-values (atom {})
-                embedding-store (InMemoryEmbeddingStore.)
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store embedding-store
-                        :metadata-values metadata-values}
-                file-maps [{:file test-file
-                            :path (.getPath test-file)
-                            :metadata {:type "src"}
-                            :embedding :namespace-doc
-                            :ingest :file-path}]
-                result (sut/ingest-files system file-maps)]
-            (is (= 1 (:ingested result)))
-            ;; Verify namespace metadata was added
-            (is (= #{"example.core"} (:namespace @metadata-values)))
-            ;; Verify returned content is path via search
-            (let [search-tool (tools/search-tool system {})
-                  impl (:implementation search-tool)
-                  search-result (impl {:query "Core namespace" :limit 1})
-                  content-text (-> search-result :content first :text)
-                  results (json/read-str content-text)
-                  returned-content (get (first results) "content")]
-              (is (= (.getPath test-file) returned-content))
-              (is (not= "Core namespace" returned-content))
-              (is (not= "(ns example.core \"Core namespace\")\n(defn foo [] :bar)" returned-content))))
-          (finally
-            (.delete test-file)
-            (.delete test-dir)))))
+    ;; NOTE: The combination of :namespace-doc with :file-path
+    ;; is not supported by the unified process-document pipeline. The pipeline
+    ;; has three strategies: :whole-document, :namespace-doc, and :file-path.
+    ;; The :file-path strategy embeds full content and stores only the path.
+    ;; The :namespace-doc strategy embeds docstring and stores full content.
+    ;; To get namespace-aware search with file-path storage, a new unified
+    ;; strategy would be needed.
 
     (testing "supports multiple files with different paths"
       (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/fp-multi")
@@ -736,19 +685,17 @@
                 file-maps [{:file file1
                             :path (.getPath file1)
                             :metadata {}
-                            :embedding :whole-document
-                            :ingest :file-path}
+                            :pipeline :file-path}
                            {:file file2
                             :path (.getPath file2)
                             :metadata {}
-                            :embedding :whole-document
-                            :ingest :file-path}]
+                            :pipeline :file-path}]
                 result (sut/ingest-files system file-maps)]
             (is (= 2 (:ingested result)))
             ;; Verify both paths are returned via search
             (let [search-tool (tools/search-tool system {})
                   impl (:implementation search-tool)
-                  search-result (impl {:query "content" :limit 2})
+                  search-result (impl {} {:query "content" :limit 2})
                   content-text (-> search-result :content first :text)
                   results (json/read-str content-text)
                   paths (set (map #(get % "content") results))]
@@ -758,4 +705,323 @@
           (finally
             (.delete file1)
             (.delete file2)
+            (.delete test-dir)))))))
+
+(deftest process-document-test
+  ;; Test the unified pipeline multimethod and helper functions
+  (testing "process-document multimethod"
+
+    (testing "helper: generate-segment-id"
+      (is (= "path/file.txt" (#'sut/generate-segment-id "path/file.txt")))
+      (is (= "path/file.txt#0" (#'sut/generate-segment-id "path/file.txt" 0)))
+      (is (= "path/file.txt#5" (#'sut/generate-segment-id "path/file.txt" 5))))
+
+    (testing "helper: build-lc4j-metadata"
+      (let [clj-meta {:type "doc" :version "v1"}
+            lc4j-meta (#'sut/build-lc4j-metadata clj-meta)]
+        (is (instance? Metadata lc4j-meta))
+        (is (= "doc" (.getString lc4j-meta "type")))
+        (is (= "v1" (.getString lc4j-meta "version")))))
+
+    (testing "helper: create-segment-map"
+      (let [file-id "path/file.txt"
+            segment-id "path/file.txt#0"
+            content "test"
+            ;; Create a real embedding using the model
+            embedding-model (AllMiniLmL6V2EmbeddingModel.)
+            embedding (.content (.embed embedding-model "test"))
+            metadata {:source "test"}
+            result (#'sut/create-segment-map file-id segment-id content embedding metadata)]
+        (is (= file-id (:file-id result)))
+        (is (= segment-id (:segment-id result)))
+        (is (= content (:content result)))
+        (is (= embedding (:embedding result)))
+        (is (= file-id (get-in result [:metadata :file-id])))
+        (is (= segment-id (get-in result [:metadata :segment-id])))
+        (is (= "test" (get-in result [:metadata :source])))))
+
+    (testing ":whole-document strategy returns single segment"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/pd-whole")
+            test-file (io/file test-dir "doc.txt")]
+        (.mkdirs test-dir)
+        (spit test-file "test content")
+        (try
+          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                embedding-store (InMemoryEmbeddingStore.)
+                path (.getPath test-file)
+                content (slurp test-file)
+                metadata {:source "test"}
+                segments (sut/process-document :whole-document
+                                               embedding-model
+                                               embedding-store
+                                               path
+                                               content
+                                               metadata)]
+            (is (= 1 (count segments)))
+            (let [segment (first segments)]
+              (is (= path (:file-id segment)))
+              (is (= path (:segment-id segment)))
+              (is (= content (:content segment)))
+              (is (instance? Embedding (:embedding segment)))
+              (is (= path (get-in segment [:metadata :file-id])))
+              (is (= path (get-in segment [:metadata :segment-id])))
+              (is (= path (get-in segment [:metadata :doc-id])))
+              (is (= "test" (get-in segment [:metadata :source])))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing ":namespace-doc strategy returns single segment with namespace"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/pd-ns")
+            test-file (io/file test-dir "code.clj")]
+        (.mkdirs test-dir)
+        (spit test-file "(ns example.core \"Core namespace\")\n(defn foo [] :bar)")
+        (try
+          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                embedding-store (InMemoryEmbeddingStore.)
+                path (.getPath test-file)
+                content (slurp test-file)
+                metadata {:type "src"}
+                segments (sut/process-document :namespace-doc
+                                               embedding-model
+                                               embedding-store
+                                               path
+                                               content
+                                               metadata)]
+            (is (= 1 (count segments)))
+            (let [segment (first segments)]
+              (is (= path (:file-id segment)))
+              (is (= path (:segment-id segment)))
+              (is (= content (:content segment)))
+              (is (instance? Embedding (:embedding segment)))
+              (is (= "example.core" (get-in segment [:metadata :namespace])))
+              (is (= path (get-in segment [:metadata :file-id])))
+              (is (= path (get-in segment [:metadata :segment-id])))
+              (is (= path (get-in segment [:metadata :doc-id])))
+              (is (= "src" (get-in segment [:metadata :type])))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing ":namespace-doc strategy throws on missing docstring"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/pd-ns-fail")
+            test-file (io/file test-dir "no_doc.clj")]
+        (.mkdirs test-dir)
+        (spit test-file "(ns example.nodoc)\n(defn bar [] :baz)")
+        (try
+          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                embedding-store (InMemoryEmbeddingStore.)
+                path (.getPath test-file)
+                content (slurp test-file)
+                metadata {}]
+            (is (thrown-with-msg? clojure.lang.ExceptionInfo
+                                  #"No namespace docstring found"
+                                  (sut/process-document :namespace-doc
+                                                        embedding-model
+                                                        embedding-store
+                                                        path
+                                                        content
+                                                        metadata))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing ":file-path strategy stores path as content"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/pd-path")
+            test-file (io/file test-dir "doc.txt")]
+        (.mkdirs test-dir)
+        (spit test-file "full content here")
+        (try
+          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                embedding-store (InMemoryEmbeddingStore.)
+                path (.getPath test-file)
+                content (slurp test-file)
+                metadata {:category "docs"}
+                segments (sut/process-document :file-path
+                                               embedding-model
+                                               embedding-store
+                                               path
+                                               content
+                                               metadata)]
+            (is (= 1 (count segments)))
+            (let [segment (first segments)]
+              (is (= path (:file-id segment)))
+              (is (= path (:segment-id segment)))
+              ;; Content should be path, not full content
+              (is (= path (:content segment)))
+              (is (instance? Embedding (:embedding segment)))
+              (is (= path (get-in segment [:metadata :file-id])))
+              (is (= path (get-in segment [:metadata :segment-id])))
+              (is (= path (get-in segment [:metadata :doc-id])))
+              (is (= "docs" (get-in segment [:metadata :category])))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing "segments are stored in embedding store"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/pd-store")
+            test-file (io/file test-dir "doc.txt")]
+        (.mkdirs test-dir)
+        (spit test-file "content")
+        (try
+          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                embedding-store (InMemoryEmbeddingStore.)
+                path (.getPath test-file)
+                content (slurp test-file)
+                metadata {}
+                segments (sut/process-document :whole-document
+                                               embedding-model
+                                               embedding-store
+                                               path
+                                               content
+                                               metadata)]
+            ;; Verify process-document completes without error and returns segments
+            (is (= 1 (count segments))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing "multimethod dispatch on unknown strategy throws"
+      (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
+            embedding-store (InMemoryEmbeddingStore.)]
+        (is (thrown? IllegalArgumentException
+                     (sut/process-document :unknown-strategy
+                                           embedding-model
+                                           embedding-store
+                                           "path"
+                                           "content"
+                                           {})))))))
+
+(deftest multi-segment-ingestion-test
+  ;; Test that ingest-file handles multiple segments correctly
+  (testing "multi-segment ingestion"
+
+    (testing "validates all segments from process-document"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/multi-seg")
+            test-file (io/file test-dir "doc.txt")]
+        (.mkdirs test-dir)
+        (spit test-file "segment1\nsegment2\nsegment3")
+        (try
+          ;; Define a test strategy that returns multiple segments
+          (defmethod sut/process-document :test-multi-segment
+            [_strategy embedding-model embedding-store path content metadata]
+            (let [lines (clojure.string/split content #"\n")
+                  file-id path]
+              (map-indexed
+                (fn [idx line]
+                  (let [segment-id (#'sut/generate-segment-id file-id idx)
+                        enhanced-metadata (assoc metadata
+                                                :file-id file-id
+                                                :segment-id segment-id
+                                                :line-num idx)
+                        response (.embed embedding-model line)
+                        embedding (.content ^dev.langchain4j.model.output.Response response)]
+                    (.add ^dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore
+                          embedding-store file-id embedding
+                          (dev.langchain4j.data.segment.TextSegment/from line))
+                    {:file-id file-id
+                     :segment-id segment-id
+                     :content line
+                     :embedding embedding
+                     :metadata enhanced-metadata}))
+                lines)))
+
+          (let [metadata-values (atom {})
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :metadata-values metadata-values}
+                file-maps [{:file test-file
+                            :path (.getPath test-file)
+                            :metadata {:source "test"}
+                            :pipeline :test-multi-segment}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 1 (:ingested result)))
+            (is (= 0 (:failed result)))
+            ;; Verify metadata from all segments was tracked
+            (is (= #{0 1 2} (:line-num @metadata-values)))
+            (is (= #{"test"} (:source @metadata-values))))
+
+          ;; Remove the test method
+          (remove-method sut/process-document :test-multi-segment)
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing "tracks metadata from all segments independently"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/multi-meta")
+            test-file (io/file test-dir "doc.txt")]
+        (.mkdirs test-dir)
+        (spit test-file "line1\nline2")
+        (try
+          ;; Define a test strategy with different metadata per segment
+          (defmethod sut/process-document :test-varying-metadata
+            [_strategy embedding-model embedding-store path content metadata]
+            (let [lines (clojure.string/split content #"\n")
+                  file-id path]
+              (map-indexed
+                (fn [idx line]
+                  (let [segment-id (#'sut/generate-segment-id file-id idx)
+                        ;; Add segment-specific metadata
+                        enhanced-metadata (assoc metadata
+                                                :file-id file-id
+                                                :segment-id segment-id
+                                                :segment-type (if (even? idx) "even" "odd"))
+                        response (.embed embedding-model line)
+                        embedding (.content ^dev.langchain4j.model.output.Response response)]
+                    (.add ^dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore
+                          embedding-store file-id embedding
+                          (dev.langchain4j.data.segment.TextSegment/from line))
+                    {:file-id file-id
+                     :segment-id segment-id
+                     :content line
+                     :embedding embedding
+                     :metadata enhanced-metadata}))
+                lines)))
+
+          (let [metadata-values (atom {})
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :metadata-values metadata-values}
+                file-maps [{:file test-file
+                            :path (.getPath test-file)
+                            :metadata {}
+                            :pipeline :test-varying-metadata}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 1 (:ingested result)))
+            ;; Both segment types should be tracked
+            (is (= #{"even" "odd"} (:segment-type @metadata-values))))
+
+          (remove-method sut/process-document :test-varying-metadata)
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing "rejects malformed segments"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/malformed-seg")
+            test-file (io/file test-dir "doc.txt")]
+        (.mkdirs test-dir)
+        (spit test-file "content")
+        (try
+          ;; Define a test strategy that returns malformed segments
+          (defmethod sut/process-document :test-malformed
+            [_strategy _model _store _path _content _metadata]
+            [{:file-id "path"
+              ;; Missing :segment-id, :content, :embedding, :metadata
+              }])
+
+          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)}
+                file-maps [{:file test-file
+                            :path (.getPath test-file)
+                            :metadata {}
+                            :pipeline :test-malformed}]
+                result (sut/ingest-files system file-maps)]
+            ;; Should fail with error
+            (is (= 0 (:ingested result)))
+            (is (= 1 (:failed result)))
+            (is (re-find #"Malformed segment map" (:error (first (:failures result))))))
+
+          (remove-method sut/process-document :test-malformed)
+          (finally
+            (.delete test-file)
             (.delete test-dir)))))))

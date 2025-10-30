@@ -10,8 +10,7 @@ An MCP (Model Context Protocol) server that indexes documents using semantic emb
 
 **Key capabilities**:
 - Semantic search across documentation, code, and knowledge bases
-- Configurable embedding strategies (`:whole-document`, `:namespace-doc`)
-- Configurable ingest strategies (`:whole-document`, `:file-path`)
+- Configurable pipeline strategies (`:whole-document`, `:namespace-doc`, `:file-path`)
 - Metadata filtering to narrow searches
 - File watching for automatic re-indexing during development
 
@@ -68,8 +67,7 @@ Config structure:
  :watch? true                                   ; optional, enable file watching
  :sources [{:path "/docs/**/*.md"
             :name "Documentation"               ; optional, added to metadata
-            :embedding :whole-document          ; optional, defaults to :whole-document
-            :ingest :whole-document             ; optional, defaults to :whole-document
+            :pipeline :whole-document           ; optional, defaults to :whole-document
             :watch? true                        ; optional, overrides global :watch?
             :custom-key "custom-value"}]}       ; any additional keys become metadata
 ```
@@ -84,48 +82,36 @@ The `process-config` function transforms `:sources` into `:path-specs` with pars
 
 See `doc/path-spec.md` for formal path specification syntax and `doc/using.md` for comprehensive configuration guide.
 
-### Embedding & Ingest Strategies
+### Processing Strategies
 
-Configurable via multimethods to support different document processing approaches:
+Configurable via the `process-document` multimethod to support different document processing approaches.
 
-- `embed-content` multimethod: dispatches on `:embedding` strategy, creates embeddings from content
-- `ingest-segments` multimethod: dispatches on `:ingest` strategy, stores embeddings
+**Built-in Strategies**:
+- `:whole-document` (default) - Embeds and stores entire file content
+- `:namespace-doc` - For Clojure files, embeds only namespace docstring but stores full source
+- `:file-path` - Embeds content but stores only file path (reduces memory usage)
 
-**Embedding Strategies**:
-- `:whole-document` (default) - Embeds entire file content
-- `:namespace-doc` - For Clojure files, embeds only namespace docstring (but stores full file with `:whole-document` ingest)
-
-**Ingest Strategies**:
-- `:whole-document` (default) - Stores complete file content in vector DB
-- `:file-path` - Stores only file path, not content (reduces memory usage)
-
-**Strategy Combinations**:
+**Configuration Examples**:
 ```clojure
 ;; Search by namespace doc, return full source
 {:path "/src/**/*.clj"
- :embedding :namespace-doc
- :ingest :whole-document}
+ :pipeline :namespace-doc}
 
 ;; Search by content, return only paths
 {:path "/docs/**/*.md"
- :embedding :whole-document
- :ingest :file-path}
+ :pipeline :file-path}
 ```
 
-To add new strategies, implement both multimethods:
+To add new strategies, implement the `process-document` multimethod:
 ```clojure
-(defmethod embed-content :custom-strategy
-  [_strategy embedding-model content metadata path]
-  ;; Return {:embedding-response ... :segment ... :metadata ...}
-  )
-
-(defmethod ingest-segments :custom-strategy
-  [_strategy embedding-store embedding-result]
-  ;; Store embeddings, return nil
+(defmethod process-document :custom-strategy
+  [_strategy embedding-model embedding-store path content metadata]
+  ;; Process document and return sequence of segment maps
+  ;; Each segment map must have: :file-id, :segment-id, :content, :embedding, :metadata
   )
 ```
 
-See `ingest.clj:113-148` for `:whole-document` implementation and `ingest.clj:150-195` for `:namespace-doc` implementation.
+See `ingest.clj:230-244` for `:whole-document`, `ingest.clj:246-273` for `:namespace-doc`, and `ingest.clj:275-292` for `:file-path` implementations.
 
 ### Metadata System
 
@@ -135,7 +121,7 @@ See `ingest.clj:113-148` for `:whole-document` implementation and `ingest.clj:15
 - Metadata filtering uses LangChain4j `IsEqualTo` filters combined with AND logic
 
 **Metadata Keys**:
-- Any keys in source config (except `:path`, `:name`, `:embedding`, `:ingest`, `:watch?`) become base metadata
+- Any keys in source config (except `:path`, `:name`, `:pipeline`, `:watch?`) become base metadata
 - Named captures from path specs (e.g., `(?<category>[^/]+)`) are added as metadata
 - `:name` key is also added to metadata if provided
 - `:doc-id` is automatically added with the file path (used for watch updates/deletes)
@@ -238,36 +224,30 @@ Regex captures are extracted and merged with base-metadata to produce final file
 
 ## Common Development Tasks
 
-### Adding a New Embedding Strategy
+### Adding a New Processing Strategy
 
-1. Implement `embed-content` multimethod in `ingest.clj`:
+1. Implement `process-document` multimethod in `ingest.clj`:
 ```clojure
-(defmethod embed-content :my-strategy
-  [_strategy embedding-model content metadata path]
+(defmethod process-document :my-strategy
+  [_strategy embedding-model embedding-store path content metadata]
+  ;; Process content and create embeddings
   (let [text-to-embed (extract-relevant-content content)
-        embedding-response (.embed embedding-model text-to-embed)
-        segment (TextSegment/from content metadata)]
-    {:embedding-response embedding-response
-     :segment segment
-     :metadata metadata}))
+        file-id path
+        segment-id (generate-segment-id file-id)
+        enhanced-metadata (assoc metadata
+                                 :file-id file-id
+                                 :segment-id segment-id)
+        lc4j-metadata (build-lc4j-metadata enhanced-metadata)
+        segment (TextSegment/from content lc4j-metadata)
+        response (.embed embedding-model segment)
+        embedding (.content response)]
+    ;; Store in embedding store
+    (.add embedding-store file-id embedding segment)
+    ;; Return sequence of segment maps
+    [(create-segment-map file-id segment-id content embedding enhanced-metadata)]))
 ```
 
-2. Document the strategy in `doc/using.md` under "Embedding Strategies"
-3. Add tests in `test/mcp_vector_search/ingest_test.clj`
-
-### Adding a New Ingest Strategy
-
-1. Implement `ingest-segments` multimethod in `ingest.clj`:
-```clojure
-(defmethod ingest-segments :my-strategy
-  [_strategy embedding-store {:keys [embedding-response segment metadata]}]
-  (let [custom-segment (create-custom-segment segment)]
-    (.add embedding-store
-          (.content embedding-response)
-          custom-segment)))
-```
-
-2. Document the strategy in `doc/using.md` under "Ingest Strategies"
+2. Document the strategy in `doc/using.md` under "Processing Strategies"
 3. Add tests in `test/mcp_vector_search/ingest_test.clj`
 
 ### Testing Configuration Changes

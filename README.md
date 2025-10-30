@@ -193,7 +193,7 @@ Metadata enables filtering searches to specific subsets:
 For file `/docs/api/auth.md`:
 - Metadata: `{:project "myapp", :type "documentation", :category "api"}`
 
-Any keys except `:path`, `:name`, `:embedding`, `:ingest`, and `:watch?` become metadata. Named captures (`(?<name>...)`) are also added as metadata.
+Any keys except `:path`, `:name`, `:pipeline`, and `:watch?` become metadata. Named captures (`(?<name>...)`) are also added as metadata.
 
 See [doc/path-spec.md](doc/path-spec.md) for the formal path specification syntax.
 
@@ -262,60 +262,34 @@ The assistant can use metadata filters like:
 
 ## Advanced Features
 
-### Embedding Strategies
+### Pipeline Strategies
 
-Control how content is embedded for search.
+Processing strategies control how documents are processed, embedded, and stored. Set via the `:pipeline` key.
 
-**`:whole-document` (default)** - Embeds entire file:
+**`:whole-document` (default)** - Embeds and stores entire file:
 
 ```clojure
 {:sources [{:path "/docs/**/*.md"
-            :embedding :whole-document}]}
+            :pipeline :whole-document}]}
 ```
 
 **`:namespace-doc`** - For Clojure files, embeds only namespace docstring but returns full file:
 
 ```clojure
 {:sources [{:path "/src/**/*.clj"
-            :embedding :namespace-doc}]}
+            :pipeline :namespace-doc}]}
 ```
 
 Useful for searching Clojure namespaces by description while returning complete source code. Adds `:namespace` to metadata.
 
-### Ingest Strategies
-
-Control what content is stored with embeddings.
-
-**`:whole-document` (default)** - Stores complete file content:
-
-```clojure
-{:sources [{:path "/docs/**/*.md"
-            :ingest :whole-document}]}
-```
-
-**`:file-path`** - Stores only the file path, not content:
+**`:file-path`** - Embeds content but stores only the file path:
 
 ```clojure
 {:sources [{:path "/archive/**/*.txt"
-            :ingest :file-path}]}
+            :pipeline :file-path}]}
 ```
 
 Reduces memory for large document sets. Embeddings are still created from full content, but search results only include file paths. Your client can read files separately.
-
-### Combining Strategies
-
-```clojure
-{:sources [
-  ;; Search by namespace doc, return full source
-  {:path "/src/**/*.clj"
-   :embedding :namespace-doc
-   :ingest :whole-document}
-
-  ;; Search by content, return only paths
-  {:path "/docs/**/*.md"
-   :embedding :whole-document
-   :ingest :file-path}]}
-```
 
 ### File Watching
 
@@ -358,19 +332,19 @@ Customize the search tool description for AI assistants:
 
    ;; Clojure source - search by namespace doc
    {:path "/src/**/*.clj"
-    :embedding :namespace-doc
+    :pipeline :namespace-doc
     :project "myapp"
     :type "source"}
 
    ;; Test files
    {:path "/test/**/*.clj"
-    :embedding :namespace-doc
+    :pipeline :namespace-doc
     :project "myapp"
     :type "test"}
 
    ;; Large archive - path-only to save memory
    {:path "/archive/**/*.txt"
-    :ingest :file-path
+    :pipeline :file-path
     :watch? false}]}
 ```
 

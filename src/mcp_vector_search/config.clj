@@ -129,6 +129,7 @@
     {:segments segments
      :base-path base-path}))
 
+
 (defn process-config
   "Process user config into internal format.
 
@@ -138,8 +139,7 @@
   Each source entry should have:
   - :path - raw path spec string
   - :name (optional) - source name
-  - :embedding (optional) - embedding strategy, defaults to :whole-document
-  - :ingest (optional) - ingest strategy, defaults to :whole-document
+  - :pipeline (optional) - processing strategy, defaults to :whole-document
   - :watch? (optional) - enable file watching, defaults to global :watch? or false
   - additional keys become base-metadata
 
@@ -148,21 +148,21 @@
   - :description - search tool description
 
   Adds :description with default if not provided.
-  Adds :embedding, :ingest, and :watch? defaults to each path-spec.
+  Adds :pipeline and :watch? defaults to each path-spec.
 
   Returns a config map with :path-specs ready for ingestion."
   [{:keys [sources description watch?] :as _config}]
   (let [global-watch? (boolean watch?)]
     (cond-> {}
       sources (assoc :path-specs
-                     (mapv (fn [{:keys [path name embedding ingest watch?] :as source}]
+                     (mapv (fn [{:keys [path name pipeline watch?] :as source}]
                              (let [parsed (parse-path-spec path)
-                                   metadata (dissoc source :path :name :embedding :ingest :watch?)]
+                                   strategy (or pipeline :whole-document)
+                                   metadata (dissoc source :path :name :pipeline :watch?)]
                                (cond-> parsed
                                  (seq metadata) (assoc :base-metadata metadata)
                                  name (assoc-in [:base-metadata :name] name)
-                                 true (assoc :embedding (or embedding :whole-document))
-                                 true (assoc :ingest (or ingest :whole-document))
+                                 true (assoc :pipeline strategy)
                                  true (assoc :watch? (if (nil? watch?) global-watch? (boolean watch?))))))
                            sources))
       true (assoc :description (or description default-search-description))

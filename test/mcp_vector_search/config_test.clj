@@ -152,27 +152,22 @@
             result (sut/process-config config)]
         (is (= sut/default-search-description (:description result)))))
 
-    (testing "adds default :embedding and :ingest strategies"
+    (testing "adds default :pipeline strategy"
       (let [config {:sources [{:path "/docs/*.md"}]}
             result (sut/process-config config)]
         (is (= 1 (count (:path-specs result))))
-        (is (= :whole-document (get-in result [:path-specs 0 :embedding])))
-        (is (= :whole-document (get-in result [:path-specs 0 :ingest])))))
+        (is (= :whole-document (get-in result [:path-specs 0 :pipeline])))))
 
-    (testing "preserves explicit :embedding and :ingest strategies"
+    (testing "preserves explicit :pipeline strategy"
       (let [config {:sources [{:path "/docs/*.md"
-                               :embedding :custom-embed
-                               :ingest :custom-ingest}]}
+                               :pipeline :custom-pipeline}]}
             result (sut/process-config config)]
-        (is (= :custom-embed (get-in result [:path-specs 0 :embedding])))
-        (is (= :custom-ingest (get-in result [:path-specs 0 :ingest])))))
+        (is (= :custom-pipeline (get-in result [:path-specs 0 :pipeline])))))
 
-    (testing ":embedding and :ingest are not included in base-metadata"
+    (testing ":pipeline is not included in base-metadata"
       (let [config {:sources [{:path "/docs/*.md"
-                               :embedding :whole-document
-                               :ingest :whole-document
+                               :pipeline :whole-document
                                :category "docs"}]}
             result (sut/process-config config)]
         (is (= {:category "docs"} (get-in result [:path-specs 0 :base-metadata])))
-        (is (nil? (get-in result [:path-specs 0 :base-metadata :embedding])))
-        (is (nil? (get-in result [:path-specs 0 :base-metadata :ingest])))))))
+        (is (nil? (get-in result [:path-specs 0 :base-metadata :pipeline])))))))

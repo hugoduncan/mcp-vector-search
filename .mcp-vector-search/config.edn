@@ -1,0 +1,10 @@
+{:description "Example search configuration"
+ :watch? true
+ :sources [{:path "/docs/**/*.md"
+            :name "Documentation"
+            :pipeline :whole-document
+            :category "docs"}
+           {:path "/src/**/*.clj"
+            :name "Source Code"
+            :pipeline :namespace-doc
+            :category "code"}]}

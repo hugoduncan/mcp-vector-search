@@ -46,7 +46,7 @@
             ;; Create search tool and search for sports-related content
             (let [search-tool (tools/search-tool system processed-config)
                   impl (:implementation search-tool)
-                  search-result (impl {:query "sports" :limit 2})]
+                  search-result (impl nil {:query "sports" :limit 2})]
 
               ;; Verify search succeeded
               (is (false? (:isError search-result)))
@@ -98,7 +98,7 @@
             ;; Search should find versioned content
             (let [search-tool (tools/search-tool system processed-config)
                   impl (:implementation search-tool)
-                  search-result (impl {:query "guide" :limit 2})]
+                  search-result (impl nil {:query "guide" :limit 2})]
 
               (is (false? (:isError search-result)))
 
@@ -164,7 +164,7 @@
                   metadata-schema (get-in search-tool [:inputSchema :properties "metadata"])]
 
               ;; Schema should include all discovered metadata fields
-              (is (= #{"version" "type" "doc-id"} (set (keys (:properties metadata-schema)))))
+              (is (= #{"version" "type" "doc-id" "file-id" "segment-id"} (set (keys (:properties metadata-schema)))))
 
               ;; Each field should have enum constraints with sorted values
               (is (= ["v1" "v2"] (get-in metadata-schema [:properties "version" :enum])))
@@ -172,7 +172,7 @@
 
               ;; Test filtering by captured metadata
               (let [impl (:implementation search-tool)
-                    v1-result (impl {:query "guide" :metadata {"version" "v1"}})
+                    v1-result (impl nil {:query "guide" :metadata {"version" "v1"}})
                     v1-results (json/read-str (-> v1-result :content first :text))]
 
                 (is (false? (:isError v1-result)))
@@ -180,7 +180,7 @@
                 (is (every? #(re-find #"v1" (get % "content")) v1-results))
 
                 ;; Search for v2 guides only
-                (let [v2-result (impl {:query "guide" :metadata {"version" "v2"}})
+                (let [v2-result (impl nil {:query "guide" :metadata {"version" "v2"}})
                       v2-results (json/read-str (-> v2-result :content first :text))]
 
                   (is (false? (:isError v2-result)))

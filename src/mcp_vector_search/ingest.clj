@@ -1,17 +1,17 @@
 (ns mcp-vector-search.ingest
-  "Document ingestion with pluggable embedding and storage strategies.
+  "Document ingestion with pluggable processing strategies.
 
   ## Responsibilities
-  Matches files from parsed path specs, embeds their content using configurable
+  Matches files from parsed path specs, processes their content using configurable
   strategies, and stores embeddings in the vector database. Tracks metadata
   values for dynamic schema generation.
 
   ## Implementation Notes
-  Uses multimethods `embed-content` and `ingest-segments` to support different
-  processing strategies. Built-in strategies include `:whole-document` (embeds
-  and stores entire files) and `:namespace-doc` (embeds namespace docstrings
-  but stores full source). File matching combines regex patterns from path
-  specs with filesystem walking."
+  Uses the `process-document` multimethod to support different processing
+  strategies. Built-in strategies include `:whole-document` (embeds and stores
+  entire files), `:namespace-doc` (embeds namespace docstrings but stores full
+  source), and `:file-path` (stores only paths). File matching combines regex
+  patterns from path specs with filesystem walking."
   (:require
     [clojure.java.io :as io]
     [clojure.string :as str]
@@ -80,17 +80,15 @@
   - :segments - parsed segment structure
   - :base-path - starting directory for filesystem walk
   - :base-metadata (optional) - metadata to merge with captures
-  - :embedding - embedding strategy
-  - :ingest - ingest strategy
+  - :pipeline - processing strategy
 
   Returns a sequence of maps:
   - :file - java.io.File object
   - :path - file path string
   - :captures - map of captured values
   - :metadata - merged base metadata and captures
-  - :embedding - embedding strategy
-  - :ingest - ingest strategy"
-  [{:keys [segments base-path base-metadata embedding ingest]}]
+  - :pipeline - processing strategy"
+  [{:keys [segments base-path base-metadata pipeline]}]
   (let [base-file (io/file base-path)
         ;; Normalize paths only if they're absolute (to handle symlinks like /var -> /private/var)
         ;; Keep relative paths as-is to preserve test compatibility
@@ -133,8 +131,7 @@
             :path      path
             :captures  {}
             :metadata  (or base-metadata {})
-            :embedding embedding
-            :ingest    ingest}]))
+            :pipeline pipeline}]))
       ;; Directory - walk and match
       (let [files (if (.isDirectory base-file)
                     (filter #(.isFile ^File %) (walk-files base-file))
@@ -149,8 +146,7 @@
                              :path      path
                              :captures  captures
                              :metadata  (merge base-metadata captures)
-                             :embedding embedding
-                             :ingest    ingest}))))
+                             :pipeline pipeline}))))
                     files))))))
 
 ;; Ingestion strategies
@@ -166,42 +162,85 @@
                    current
                    metadata))))
 
-(defn- embed-whole-document
-  "Embedding strategy: embed entire document as single segment.
-  Returns map with :embedding-response and :segment."
-  [^EmbeddingModel embedding-model content metadata path]
-  (let [metadata-with-id (assoc metadata :doc-id path)
-        string-metadata (into {} (map (fn [[k v]] [(name k) v]) metadata-with-id))
-        lc4j-metadata   (Metadata/from string-metadata)
-        segment         (TextSegment/from content lc4j-metadata)
-        response        (.embed embedding-model segment)]
-    {:embedding-response response
-     :segment segment
-     :metadata metadata-with-id}))
+;;; Unified pipeline protocol
 
-(defn- ingest-whole-document
-  "Ingest strategy: add single embedding to store.
-  Returns nil on success."
-  [^EmbeddingStore embedding-store embedding-result]
-  (let [^Embedding embedding (.content ^dev.langchain4j.model.output.Response (:embedding-response embedding-result))
-        segment (:segment embedding-result)
-        ^String doc-id (:path embedding-result)]
-    (.add ^dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore embedding-store
-          doc-id
-          embedding
-          segment)))
+(defn- generate-segment-id
+  "Generate a segment ID for a document segment.
+  For single-segment documents, returns the file-id.
+  For multi-segment documents, appends #index to the file-id."
+  ([file-id]
+   file-id)
+  ([file-id index]
+   (str file-id "#" index)))
 
-(defmulti embed-content
-  "Dispatch embedding based on strategy.
-  Returns map with :embedding-response and :segment (or :segments)."
-  (fn [strategy _embedding-model _content _metadata _path] strategy))
+(defn- build-lc4j-metadata
+  "Convert a Clojure metadata map to a LangChain4j Metadata object.
+  Converts keyword keys to strings."
+  [metadata]
+  (let [string-metadata (into {} (map (fn [[k v]] [(name k) v]) metadata))]
+    (Metadata/from string-metadata)))
 
-(defmethod embed-content :whole-document
-  [_strategy embedding-model content metadata path]
-  (embed-whole-document embedding-model content metadata path))
+(defn- create-segment-map
+  "Create a segment map with all required fields.
 
-(defmethod embed-content :namespace-doc
-  [_strategy ^EmbeddingModel embedding-model content metadata path]
+  Parameters:
+  - file-id: Shared identifier for all segments from the same file
+  - segment-id: Unique identifier for this specific segment
+  - content: Text content to store in the vector database
+  - embedding: LangChain4j Embedding object
+  - metadata: Metadata map (will be enhanced with file-id and segment-id)"
+  [file-id segment-id content embedding metadata]
+  (let [enhanced-metadata (assoc metadata
+                                 :file-id file-id
+                                 :segment-id segment-id)]
+    {:file-id file-id
+     :segment-id segment-id
+     :content content
+     :embedding embedding
+     :metadata enhanced-metadata}))
+
+(defmulti process-document
+  "Process a document and return a sequence of segment maps.
+
+  Dispatches on strategy keyword. Implementations should:
+  1. Create embeddings from content
+  2. Store embeddings in the embedding-store
+  3. Return sequence of segment maps
+
+  Parameters:
+  - strategy: Keyword identifying the processing strategy
+  - embedding-model: LangChain4j EmbeddingModel instance
+  - embedding-store: EmbeddingStore for storing embeddings
+  - path: File path (becomes file-id)
+  - content: File content string
+  - metadata: Base metadata map (without file-id/segment-id)
+
+  Returns: Sequence of maps with keys:
+  - :file-id - Shared ID for all segments from this file
+  - :segment-id - Unique ID for this segment
+  - :content - Text content stored in vector DB
+  - :embedding - LangChain4j Embedding object
+  - :metadata - Enhanced metadata including both IDs"
+  (fn [strategy _model _store _path _content _metadata] strategy))
+
+(defmethod process-document :whole-document
+  [_strategy ^EmbeddingModel embedding-model ^EmbeddingStore embedding-store path content metadata]
+  (let [file-id path
+        segment-id (generate-segment-id file-id)
+        ;; Preserve :doc-id for backward compatibility
+        enhanced-metadata (assoc metadata
+                                 :doc-id path
+                                 :file-id file-id
+                                 :segment-id segment-id)
+        lc4j-metadata (build-lc4j-metadata enhanced-metadata)
+        segment (TextSegment/from content lc4j-metadata)
+        response (.embed embedding-model segment)
+        embedding (.content ^dev.langchain4j.model.output.Response response)]
+    (.add ^InMemoryEmbeddingStore embedding-store file-id embedding segment)
+    [(create-segment-map file-id segment-id content embedding enhanced-metadata)]))
+
+(defmethod process-document :namespace-doc
+  [_strategy ^EmbeddingModel embedding-model ^EmbeddingStore embedding-store path content metadata]
   (let [ns-form (parse/parse-first-ns-form content)]
     (when-not ns-form
       (throw (ex-info "No ns form found" {})))
@@ -211,62 +250,82 @@
       (let [namespace (parse/extract-namespace ns-form)]
         (when-not namespace
           (throw (ex-info "Could not extract namespace" {})))
-        (let [enhanced-metadata (assoc metadata :namespace namespace :doc-id path)
-              string-metadata   (into {} (map (fn [[k v]] [(name k) v]) enhanced-metadata))
-              lc4j-metadata     (Metadata/from string-metadata)
+        (let [file-id path
+              segment-id (generate-segment-id file-id)
+              ;; Add namespace and preserve :doc-id for backward compatibility
+              enhanced-metadata (assoc metadata
+                                       :namespace namespace
+                                       :doc-id path
+                                       :file-id file-id
+                                       :segment-id segment-id)
+              lc4j-metadata (build-lc4j-metadata enhanced-metadata)
               ;; Embed the docstring but store the full content
               docstring-segment (TextSegment/from docstring lc4j-metadata)
-              response          (.embed embedding-model docstring-segment)
+              response (.embed embedding-model docstring-segment)
+              embedding (.content ^dev.langchain4j.model.output.Response response)
               ;; Create segment with full content for storage
-              full-segment      (TextSegment/from content lc4j-metadata)]
-          {:embedding-response response
-           :segment full-segment
-           :metadata enhanced-metadata})))))
+              full-segment (TextSegment/from content lc4j-metadata)]
+          (.add ^InMemoryEmbeddingStore embedding-store file-id embedding full-segment)
+          [(create-segment-map file-id segment-id content embedding enhanced-metadata)])))))
 
-(defmulti ingest-segments
-  "Dispatch ingest based on strategy.
-  Returns nil on success."
-  (fn [strategy _embedding-store _embedding-result] strategy))
+(defmethod process-document :file-path
+  [_strategy ^EmbeddingModel embedding-model ^EmbeddingStore embedding-store path content metadata]
+  (let [file-id path
+        segment-id (generate-segment-id file-id)
+        ;; Preserve :doc-id for backward compatibility
+        enhanced-metadata (assoc metadata
+                                 :doc-id path
+                                 :file-id file-id
+                                 :segment-id segment-id)
+        lc4j-metadata (build-lc4j-metadata enhanced-metadata)
+        ;; Embed full content
+        content-segment (TextSegment/from content lc4j-metadata)
+        response (.embed embedding-model content-segment)
+        embedding (.content ^dev.langchain4j.model.output.Response response)
+        ;; Store only the path
+        path-segment (TextSegment/from path lc4j-metadata)]
+    (.add ^InMemoryEmbeddingStore embedding-store file-id embedding path-segment)
+    [(create-segment-map file-id segment-id path embedding enhanced-metadata)]))
 
-(defmethod ingest-segments :whole-document
-  [_strategy embedding-store embedding-result]
-  (ingest-whole-document embedding-store embedding-result))
-
-(defmethod ingest-segments :file-path
-  [_strategy ^EmbeddingStore embedding-store embedding-result]
-  (let [^Embedding embedding (.content ^dev.langchain4j.model.output.Response (:embedding-response embedding-result))
-        ;; Get metadata from the original segment (which has all metadata from embedding phase)
-        ^TextSegment original-segment (:segment embedding-result)
-        original-metadata (.metadata original-segment)
-        ;; Create new segment with just the path as content, preserving metadata
-        ^String path (:path embedding-result)
-        path-segment (TextSegment/from path original-metadata)]
-    (.add ^dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore embedding-store
-          path
-          embedding
-          path-segment)))
+(defn- validate-segment
+  "Validate that a segment map has all required fields.
+  Returns the segment if valid, throws ex-info if invalid."
+  [segment]
+  (let [required-keys #{:file-id :segment-id :content :embedding :metadata}
+        missing-keys (remove #(contains? segment %) required-keys)]
+    (when (seq missing-keys)
+      (throw (ex-info "Malformed segment map: missing required keys"
+                      {:missing-keys missing-keys
+                       :segment segment}))))
+  segment)
 
 (defn ingest-file
   "Ingest a single file into the embedding store.
 
   Takes a system map with :embedding-model, :embedding-store,
   and :metadata-values, and a file map from files-from-path-spec
-  with :file, :path, :metadata, :embedding, and :ingest strategy keys.
+  with :file, :path, :metadata, and :pipeline strategy keys.
 
   Returns the file map on success, or the file map with an :error key on
   failure."
   [{:keys [embedding-model embedding-store metadata-values]}
-   {:keys [file path metadata embedding ingest] :as file-map}]
+   {:keys [file path metadata pipeline] :as file-map}]
   (try
-    (let [content         (slurp file)
-          embedding-result (embed-content embedding embedding-model content metadata path)
-          ;; Use enhanced metadata if strategy provided it, otherwise use original
-          final-metadata  (or (:metadata embedding-result) metadata)
-          ;; Add path to embedding-result for ingest strategies that need it
-          embedding-result-with-path (assoc embedding-result :path path)]
-      (ingest-segments ingest embedding-store embedding-result-with-path)
+    (let [content (slurp file)
+          ;; Process document using unified pipeline
+          segments (process-document pipeline
+                                     embedding-model
+                                     embedding-store
+                                     path
+                                     content
+                                     metadata)]
+      ;; Validate all segments
+      (doseq [segment segments]
+        (validate-segment segment))
+      ;; Track metadata from all segments
       (when metadata-values
-        (record-metadata-values metadata-values final-metadata))
+        (doseq [segment segments]
+          (record-metadata-values metadata-values (:metadata segment))))
       file-map)
     (catch Exception e
       (assoc file-map :error (.getMessage e)))))
