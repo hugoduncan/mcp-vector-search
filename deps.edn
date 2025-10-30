@@ -1,7 +1,7 @@
 {:paths ["src"]
- :deps  {io.github.hugoduncan/mcp-clj
+ :deps  {io.github.hugoduncan/mcp-clj-server
          {:git/url   "https://github.com/hugoduncan/mcp-clj"
-          :git/sha   "66b7c92e45f23f66d940eba636cf64040be3b2cf"
+          :git/sha   "50a2d1ab100c27b76e80b5674d6c2ee567b079b6"
           :deps/root "projects/server"}
 
          dev.langchain4j/langchain4j
@@ -20,11 +20,11 @@
  :aliases
  {:test {:extra-paths ["test"]
          :extra-deps  {lambdaisland/kaocha {:mvn/version "1.91.1392"}
-                       babashka/fs         {:mvn/version "0.5.23"}
-                       io.github.hugoduncan/mcp-clj
-                       {:git/url   "https://github.com/hugoduncan/mcp-clj"
-                        :git/sha   "66b7c92e45f23f66d940eba636cf64040be3b2cf"
-                        :deps/root "projects/client"}}
+                       babashka/fs         {:mvn/version "0.5.23"}}
+         :override-deps {org.hugpduncan/mcp-clj-server
+                         {:git/url   "https://github.com/hugoduncan/mcp-clj"
+                          :git/sha   "50a2d1ab100c27b76e80b5674d6c2ee567b079b6"
+                          :deps/root "projects/test-dep"}}
          :jvm-opts    ["--enable-native-access=ALL-UNNAMED"]
          :main-opts   ["-m" "kaocha.runner"]}
   :run  {:exec-fn  mcp-vector-search.main/start
