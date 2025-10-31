@@ -47,7 +47,7 @@
 
 ;; Define at load time to ensure it's available for all test runs
 (defmethod ingest/process-document :test-watch-multi-segment
-  [_strategy embedding-model embedding-store path content metadata]
+  [_strategy path content metadata]
   (let [lines (if (empty? content)
                 [""]
                 (str/split-lines content))
@@ -61,17 +61,11 @@
                 enhanced-metadata (assoc metadata
                                          :file-id file-id
                                          :segment-id segment-id
-                                         :line-number idx)
-                string-metadata (into {} (map (fn [[k v]] [(name k) v]) enhanced-metadata))
-                lc4j-metadata (dev.langchain4j.data.document.Metadata/from string-metadata)
-                segment (TextSegment/from line lc4j-metadata)
-                response (.embed embedding-model segment)
-                embedding (.content response)]
-            (.add embedding-store segment-id embedding segment)
+                                         :line-number idx)]
             {:file-id file-id
              :segment-id segment-id
-             :content line
-             :embedding embedding
+             :text-to-embed line
+             :content-to-store line
              :metadata enhanced-metadata}))
         lines))))
 
@@ -467,8 +461,6 @@
 
             ;; Process document directly to get segments
             (let [segments (ingest/process-document :chunked
-                                                    (:embedding-model system)
-                                                    (:embedding-store system)
                                                     canonical-path
                                                     test-content
                                                     metadata)]

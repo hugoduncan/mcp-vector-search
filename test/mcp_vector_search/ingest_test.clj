@@ -723,19 +723,17 @@
         (is (= "doc" (.getString lc4j-meta "type")))
         (is (= "v1" (.getString lc4j-meta "version")))))
 
-    (testing "helper: create-segment-map"
+    (testing "helper: create-segment-descriptor"
       (let [file-id "path/file.txt"
             segment-id "path/file.txt#0"
-            content "test"
-            ;; Create a real embedding using the model
-            embedding-model (AllMiniLmL6V2EmbeddingModel.)
-            embedding (.content (.embed embedding-model "test"))
+            text-to-embed "text to embed"
+            content-to-store "stored text"
             metadata {:source "test"}
-            result (#'sut/create-segment-map file-id segment-id content embedding metadata)]
+            result (#'sut/create-segment-descriptor file-id segment-id text-to-embed content-to-store metadata)]
         (is (= file-id (:file-id result)))
         (is (= segment-id (:segment-id result)))
-        (is (= content (:content result)))
-        (is (= embedding (:embedding result)))
+        (is (= text-to-embed (:text-to-embed result)))
+        (is (= content-to-store (:content-to-store result)))
         (is (= file-id (get-in result [:metadata :file-id])))
         (is (= segment-id (get-in result [:metadata :segment-id])))
         (is (= "test" (get-in result [:metadata :source])))))
@@ -746,23 +744,19 @@
         (.mkdirs test-dir)
         (spit test-file "test content")
         (try
-          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                embedding-store (InMemoryEmbeddingStore.)
-                path (.getPath test-file)
+          (let [path (.getPath test-file)
                 content (slurp test-file)
                 metadata {:source "test"}
-                segments (sut/process-document :whole-document
-                                               embedding-model
-                                               embedding-store
-                                               path
-                                               content
-                                               metadata)]
-            (is (= 1 (count segments)))
-            (let [segment (first segments)]
+                segment-descriptors (sut/process-document :whole-document
+                                                          path
+                                                          content
+                                                          metadata)]
+            (is (= 1 (count segment-descriptors)))
+            (let [segment (first segment-descriptors)]
               (is (= path (:file-id segment)))
               (is (= path (:segment-id segment)))
-              (is (= content (:content segment)))
-              (is (instance? Embedding (:embedding segment)))
+              (is (= content (:text-to-embed segment)))
+              (is (= content (:content-to-store segment)))
               (is (= path (get-in segment [:metadata :file-id])))
               (is (= path (get-in segment [:metadata :segment-id])))
               (is (= path (get-in segment [:metadata :doc-id])))
@@ -777,23 +771,19 @@
         (.mkdirs test-dir)
         (spit test-file "(ns example.core \"Core namespace\")\n(defn foo [] :bar)")
         (try
-          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                embedding-store (InMemoryEmbeddingStore.)
-                path (.getPath test-file)
+          (let [path (.getPath test-file)
                 content (slurp test-file)
                 metadata {:type "src"}
-                segments (sut/process-document :namespace-doc
-                                               embedding-model
-                                               embedding-store
-                                               path
-                                               content
-                                               metadata)]
-            (is (= 1 (count segments)))
-            (let [segment (first segments)]
+                segment-descriptors (sut/process-document :namespace-doc
+                                                          path
+                                                          content
+                                                          metadata)]
+            (is (= 1 (count segment-descriptors)))
+            (let [segment (first segment-descriptors)]
               (is (= path (:file-id segment)))
               (is (= path (:segment-id segment)))
-              (is (= content (:content segment)))
-              (is (instance? Embedding (:embedding segment)))
+              (is (= "Core namespace" (:text-to-embed segment)))
+              (is (= content (:content-to-store segment)))
               (is (= "example.core" (get-in segment [:metadata :namespace])))
               (is (= path (get-in segment [:metadata :file-id])))
               (is (= path (get-in segment [:metadata :segment-id])))
@@ -809,16 +799,12 @@
         (.mkdirs test-dir)
         (spit test-file "(ns example.nodoc)\n(defn bar [] :baz)")
         (try
-          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                embedding-store (InMemoryEmbeddingStore.)
-                path (.getPath test-file)
+          (let [path (.getPath test-file)
                 content (slurp test-file)
                 metadata {}]
             (is (thrown-with-msg? clojure.lang.ExceptionInfo
                                   #"No namespace docstring found"
                                   (sut/process-document :namespace-doc
-                                                        embedding-model
-                                                        embedding-store
                                                         path
                                                         content
                                                         metadata))))
@@ -832,24 +818,20 @@
         (.mkdirs test-dir)
         (spit test-file "full content here")
         (try
-          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                embedding-store (InMemoryEmbeddingStore.)
-                path (.getPath test-file)
+          (let [path (.getPath test-file)
                 content (slurp test-file)
                 metadata {:category "docs"}
-                segments (sut/process-document :file-path
-                                               embedding-model
-                                               embedding-store
-                                               path
-                                               content
-                                               metadata)]
-            (is (= 1 (count segments)))
-            (let [segment (first segments)]
+                segment-descriptors (sut/process-document :file-path
+                                                          path
+                                                          content
+                                                          metadata)]
+            (is (= 1 (count segment-descriptors)))
+            (let [segment (first segment-descriptors)]
               (is (= path (:file-id segment)))
               (is (= path (:segment-id segment)))
+              (is (= content (:text-to-embed segment)))
               ;; Content should be path, not full content
-              (is (= path (:content segment)))
-              (is (instance? Embedding (:embedding segment)))
+              (is (= path (:content-to-store segment)))
               (is (= path (get-in segment [:metadata :file-id])))
               (is (= path (get-in segment [:metadata :segment-id])))
               (is (= path (get-in segment [:metadata :doc-id])))
@@ -858,39 +840,12 @@
             (.delete test-file)
             (.delete test-dir)))))
 
-    (testing "segments are stored in embedding store"
-      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/pd-store")
-            test-file (io/file test-dir "doc.txt")]
-        (.mkdirs test-dir)
-        (spit test-file "content")
-        (try
-          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                embedding-store (InMemoryEmbeddingStore.)
-                path (.getPath test-file)
-                content (slurp test-file)
-                metadata {}
-                segments (sut/process-document :whole-document
-                                               embedding-model
-                                               embedding-store
-                                               path
-                                               content
-                                               metadata)]
-            ;; Verify process-document completes without error and returns segments
-            (is (= 1 (count segments))))
-          (finally
-            (.delete test-file)
-            (.delete test-dir)))))
-
     (testing "multimethod dispatch on unknown strategy throws"
-      (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-            embedding-store (InMemoryEmbeddingStore.)]
-        (is (thrown? IllegalArgumentException
-                     (sut/process-document :unknown-strategy
-                                           embedding-model
-                                           embedding-store
-                                           "path"
-                                           "content"
-                                           {})))))))
+      (is (thrown? IllegalArgumentException
+                   (sut/process-document :unknown-strategy
+                                         "path"
+                                         "content"
+                                         {}))))))
 
 (deftest chunked-document-test
   ;; Test :chunked pipeline strategy for splitting documents into chunks
@@ -903,21 +858,17 @@
         (.mkdirs test-dir)
         (spit test-file content)
         (try
-          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                embedding-store (InMemoryEmbeddingStore.)
-                path (.getPath test-file)
+          (let [path (.getPath test-file)
                 metadata {:source "test"}
-                segments (sut/process-document :chunked
-                                               embedding-model
-                                               embedding-store
-                                               path
-                                               content
-                                               metadata)]
-            (is (= 1 (count segments)))
-            (let [segment (first segments)]
+                segment-descriptors (sut/process-document :chunked
+                                                          path
+                                                          content
+                                                          metadata)]
+            (is (= 1 (count segment-descriptors)))
+            (let [segment (first segment-descriptors)]
               (is (= path (:file-id segment)))
-              (is (= content (:content segment)))
-              (is (instance? Embedding (:embedding segment)))
+              (is (= content (:text-to-embed segment)))
+              (is (= content (:content-to-store segment)))
               (is (= path (get-in segment [:metadata :doc-id])))
               (is (= path (get-in segment [:metadata :file-id])))
               (is (= 0 (get-in segment [:metadata :chunk-index])))
@@ -939,28 +890,24 @@
         (.mkdirs test-dir)
         (spit test-file content)
         (try
-          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                embedding-store (InMemoryEmbeddingStore.)
-                path (.getPath test-file)
+          (let [path (.getPath test-file)
                 metadata {}
-                segments (sut/process-document :chunked
-                                               embedding-model
-                                               embedding-store
-                                               path
-                                               content
-                                               metadata)]
+                segment-descriptors (sut/process-document :chunked
+                                                          path
+                                                          content
+                                                          metadata)]
             ;; Should produce multiple chunks
-            (is (> (count segments) 1))
+            (is (> (count segment-descriptors) 1))
             ;; Verify all chunks have the same chunk-count
-            (is (apply = (map #(get-in % [:metadata :chunk-count]) segments)))
+            (is (apply = (map #(get-in % [:metadata :chunk-count]) segment-descriptors)))
             ;; Verify chunk-count matches actual count
-            (is (= (count segments) (get-in (first segments) [:metadata :chunk-count])))
+            (is (= (count segment-descriptors) (get-in (first segment-descriptors) [:metadata :chunk-count])))
             ;; Verify chunk indices are sequential
-            (is (= (range (count segments))
-                   (map #(get-in % [:metadata :chunk-index]) segments)))
+            (is (= (range (count segment-descriptors))
+                   (map #(get-in % [:metadata :chunk-index]) segment-descriptors)))
             ;; Verify all chunks share the same doc-id and file-id
-            (is (apply = path (map #(get-in % [:metadata :doc-id]) segments)))
-            (is (apply = path (map #(get-in % [:metadata :file-id]) segments))))
+            (is (apply = path (map #(get-in % [:metadata :doc-id]) segment-descriptors)))
+            (is (apply = path (map #(get-in % [:metadata :file-id]) segment-descriptors))))
           (finally
             (.delete test-file)
             (.delete test-dir)))))
@@ -972,18 +919,14 @@
         (.mkdirs test-dir)
         (spit test-file content)
         (try
-          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                embedding-store (InMemoryEmbeddingStore.)
-                path (.getPath test-file)
+          (let [path (.getPath test-file)
                 metadata {:category "docs" :version "v1"}
-                segments (sut/process-document :chunked
-                                               embedding-model
-                                               embedding-store
-                                               path
-                                               content
-                                               metadata)]
+                segment-descriptors (sut/process-document :chunked
+                                                          path
+                                                          content
+                                                          metadata)]
             ;; All segments should have required chunk metadata
-            (doseq [segment segments]
+            (doseq [segment segment-descriptors]
               (is (contains? (:metadata segment) :doc-id))
               (is (contains? (:metadata segment) :file-id))
               (is (contains? (:metadata segment) :segment-id))
@@ -1004,17 +947,13 @@
         (.mkdirs test-dir)
         (spit test-file content)
         (try
-          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                embedding-store (InMemoryEmbeddingStore.)
-                path (.getPath test-file)
+          (let [path (.getPath test-file)
                 metadata {}
-                segments (sut/process-document :chunked
-                                               embedding-model
-                                               embedding-store
-                                               path
-                                               content
-                                               metadata)
-                segment-ids (map :segment-id segments)]
+                segment-descriptors (sut/process-document :chunked
+                                                          path
+                                                          content
+                                                          metadata)
+                segment-ids (map :segment-id segment-descriptors)]
             ;; All segment IDs should be unique
             (is (= (count segment-ids) (count (set segment-ids))))
             ;; Segment IDs should follow the pattern "path-chunk-N"
@@ -1030,19 +969,15 @@
         (.mkdirs test-dir)
         (spit test-file content)
         (try
-          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                embedding-store (InMemoryEmbeddingStore.)
-                path (.getPath test-file)
+          (let [path (.getPath test-file)
                 ;; Use smaller chunk size to force more chunks
                 metadata {:chunk-size 100 :chunk-overlap 20}
-                segments (sut/process-document :chunked
-                                               embedding-model
-                                               embedding-store
-                                               path
-                                               content
-                                               metadata)]
+                segment-descriptors (sut/process-document :chunked
+                                                          path
+                                                          content
+                                                          metadata)]
             ;; With smaller chunk size, should produce multiple chunks
-            (is (> (count segments) 1)))
+            (is (> (count segment-descriptors) 1)))
           (finally
             (.delete test-file)
             (.delete test-dir)))))
@@ -1054,29 +989,25 @@
         (.mkdirs test-dir)
         (spit test-file content)
         (try
-          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                embedding-store (InMemoryEmbeddingStore.)
-                path (.getPath test-file)
+          (let [path (.getPath test-file)
                 metadata {}
-                segments (sut/process-document :chunked
-                                               embedding-model
-                                               embedding-store
-                                               path
-                                               content
-                                               metadata)]
+                segment-descriptors (sut/process-document :chunked
+                                                          path
+                                                          content
+                                                          metadata)]
             ;; First chunk should start at offset 0
-            (is (= 0 (get-in (first segments) [:metadata :chunk-offset])))
+            (is (= 0 (get-in (first segment-descriptors) [:metadata :chunk-offset])))
             ;; Verify each chunk's content matches the substring at its offset
-            (doseq [segment segments]
+            (doseq [segment segment-descriptors]
               (let [offset (get-in segment [:metadata :chunk-offset])
-                    chunk-content (:content segment)
+                    chunk-content (:text-to-embed segment)
                     expected-content (subs content offset (min (count content)
                                                                (+ offset (count chunk-content))))]
                 (is (= expected-content chunk-content)
                     (str "Chunk at offset " offset " does not match content substring"))))
             ;; Offsets should be increasing (but may not be strictly sequential due to overlap)
-            (when (> (count segments) 1)
-              (is (> (get-in (second segments) [:metadata :chunk-offset]) 0))))
+            (when (> (count segment-descriptors) 1)
+              (is (> (get-in (second segment-descriptors) [:metadata :chunk-offset]) 0))))
           (finally
             (.delete test-file)
             (.delete test-dir)))))))
@@ -1094,23 +1025,19 @@
         (.mkdirs test-dir)
         (spit test-file content)
         (try
-          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                embedding-store (InMemoryEmbeddingStore.)
-                path (.getPath test-file)
+          (let [path (.getPath test-file)
                 metadata {:chunk-size 512 :chunk-overlap 100}
-                segments (sut/process-document :chunked
-                                               embedding-model
-                                               embedding-store
-                                               path
-                                               content
-                                               metadata)]
+                segment-descriptors (sut/process-document :chunked
+                                                          path
+                                                          content
+                                                          metadata)]
             ;; Should produce multiple chunks
-            (is (> (count segments) 1)
+            (is (> (count segment-descriptors) 1)
                 "Content should be split into multiple chunks")
             ;; Verify overlap between adjacent chunks
-            (doseq [[chunk-n chunk-n+1] (partition 2 1 segments)]
-              (let [content-n (:content chunk-n)
-                    content-n+1 (:content chunk-n+1)
+            (doseq [[chunk-n chunk-n+1] (partition 2 1 segment-descriptors)]
+              (let [content-n (:text-to-embed chunk-n)
+                    content-n+1 (:text-to-embed chunk-n+1)
                     overlap-size 100
                     ;; Get last overlap-size chars from chunk N
                     suffix-n (subs content-n (max 0 (- (count content-n) overlap-size)))
@@ -1136,24 +1063,20 @@
         (.mkdirs test-dir)
         (spit test-file content)
         (try
-          (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                embedding-store (InMemoryEmbeddingStore.)
-                path (.getPath test-file)
+          (let [path (.getPath test-file)
                 base-metadata {:project "test-project"
                                :type "documentation"
                                :version "v1.0"
                                :chunk-size 200
                                :chunk-overlap 50}
-                segments (sut/process-document :chunked
-                                               embedding-model
-                                               embedding-store
-                                               path
-                                               content
-                                               base-metadata)]
+                segment-descriptors (sut/process-document :chunked
+                                                          path
+                                                          content
+                                                          base-metadata)]
             ;; Should produce multiple chunks
-            (is (> (count segments) 1))
+            (is (> (count segment-descriptors) 1))
             ;; All chunks should have base metadata
-            (doseq [segment segments]
+            (doseq [segment segment-descriptors]
               (is (= "test-project" (get-in segment [:metadata :project])))
               (is (= "documentation" (get-in segment [:metadata :type])))
               (is (= "v1.0" (get-in segment [:metadata :version])))))
@@ -1183,21 +1106,17 @@
                 file-maps (sut/files-from-path-spec path-spec)
                 _ (is (= 1 (count file-maps)) "Should find one matching file")
                 file-map (first file-maps)
-                embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                embedding-store (InMemoryEmbeddingStore.)
                 path (:path file-map)
                 full-metadata (merge (:metadata file-map)
                                      {:chunk-size 200 :chunk-overlap 50})
-                segments (sut/process-document :chunked
-                                               embedding-model
-                                               embedding-store
-                                               path
-                                               content
-                                               full-metadata)]
+                segment-descriptors (sut/process-document :chunked
+                                                          path
+                                                          content
+                                                          full-metadata)]
             ;; Should produce multiple chunks
-            (is (> (count segments) 1))
+            (is (> (count segment-descriptors) 1))
             ;; All chunks should have captures from path spec
-            (doseq [segment segments]
+            (doseq [segment segment-descriptors]
               (is (= "guides" (get-in segment [:metadata :category]))
                   "Capture 'category' should be in all chunks")
               (is (= "install" (get-in segment [:metadata :docname]))
@@ -1224,19 +1143,15 @@
                            :ingest :chunked}
                 file-maps (sut/files-from-path-spec path-spec)
                 file-map (first file-maps)
-                embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                embedding-store (InMemoryEmbeddingStore.)
                 path (:path file-map)
-                segments (sut/process-document :chunked
-                                               embedding-model
-                                               embedding-store
-                                               path
-                                               content
-                                               (:metadata file-map))]
+                segment-descriptors (sut/process-document :chunked
+                                                          path
+                                                          content
+                                                          (:metadata file-map))]
             ;; Should produce multiple chunks
-            (is (> (count segments) 1))
+            (is (> (count segment-descriptors) 1))
             ;; All chunks should have :name from source config
-            (doseq [segment segments]
+            (doseq [segment segment-descriptors]
               (is (= "Test Documentation" (get-in segment [:metadata :name]))
                   ":name field should be in all chunks")))
           (finally
@@ -1255,25 +1170,17 @@
         (try
           ;; Define a test strategy that returns multiple segments
           (defmethod sut/process-document :test-multi-segment
-            [_strategy embedding-model embedding-store path content metadata]
+            [_strategy path content metadata]
             (let [lines (clojure.string/split content #"\n")
                   file-id path]
               (map-indexed
                 (fn [idx line]
                   (let [segment-id (#'sut/generate-segment-id file-id idx)
-                        enhanced-metadata (assoc metadata
-                                                :file-id file-id
-                                                :segment-id segment-id
-                                                :line-num idx)
-                        response (.embed embedding-model line)
-                        embedding (.content ^dev.langchain4j.model.output.Response response)]
-                    (.add ^dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore
-                          embedding-store file-id embedding
-                          (dev.langchain4j.data.segment.TextSegment/from line))
+                        enhanced-metadata (assoc metadata :line-num idx)]
                     {:file-id file-id
                      :segment-id segment-id
-                     :content line
-                     :embedding embedding
+                     :text-to-embed line
+                     :content-to-store line
                      :metadata enhanced-metadata}))
                 lines)))
 
@@ -1306,7 +1213,7 @@
         (try
           ;; Define a test strategy with different metadata per segment
           (defmethod sut/process-document :test-varying-metadata
-            [_strategy embedding-model embedding-store path content metadata]
+            [_strategy path content metadata]
             (let [lines (clojure.string/split content #"\n")
                   file-id path]
               (map-indexed
@@ -1314,18 +1221,11 @@
                   (let [segment-id (#'sut/generate-segment-id file-id idx)
                         ;; Add segment-specific metadata
                         enhanced-metadata (assoc metadata
-                                                :file-id file-id
-                                                :segment-id segment-id
-                                                :segment-type (if (even? idx) "even" "odd"))
-                        response (.embed embedding-model line)
-                        embedding (.content ^dev.langchain4j.model.output.Response response)]
-                    (.add ^dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore
-                          embedding-store file-id embedding
-                          (dev.langchain4j.data.segment.TextSegment/from line))
+                                                :segment-type (if (even? idx) "even" "odd"))]
                     {:file-id file-id
                      :segment-id segment-id
-                     :content line
-                     :embedding embedding
+                     :text-to-embed line
+                     :content-to-store line
                      :metadata enhanced-metadata}))
                 lines)))
 
@@ -1355,9 +1255,9 @@
         (try
           ;; Define a test strategy that returns malformed segments
           (defmethod sut/process-document :test-malformed
-            [_strategy _model _store _path _content _metadata]
+            [_strategy _path _content _metadata]
             [{:file-id "path"
-              ;; Missing :segment-id, :content, :embedding, :metadata
+              ;; Missing :segment-id, :text-to-embed, :content-to-store, :metadata
               }])
 
           (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
@@ -1370,7 +1270,7 @@
             ;; Should fail with error
             (is (= 0 (:ingested result)))
             (is (= 1 (:failed result)))
-            (is (re-find #"Malformed segment map" (:error (first (:failures result))))))
+            (is (re-find #"Malformed segment descriptor" (:error (first (:failures result))))))
 
           (remove-method sut/process-document :test-malformed)
           (finally

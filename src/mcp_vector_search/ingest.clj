@@ -183,67 +183,54 @@
   (let [string-metadata (into {} (map (fn [[k v]] [(name k) v]) metadata))]
     (Metadata/from string-metadata)))
 
-(defn- create-segment-map
-  "Create a segment map with all required fields.
+(defn- create-segment-descriptor
+  "Create a segment descriptor with all required fields.
 
   Parameters:
   - file-id: Shared identifier for all segments from the same file
   - segment-id: Unique identifier for this specific segment
-  - content: Text content to store in the vector database
-  - embedding: LangChain4j Embedding object
-  - metadata: Metadata map (will be enhanced with file-id and segment-id)"
-  [file-id segment-id content embedding metadata]
+  - text-to-embed: Text content to use for embedding generation
+  - content-to-store: Text content to store in the vector database
+  - metadata: Metadata map (will be enhanced with file-id, segment-id, and doc-id)"
+  [file-id segment-id text-to-embed content-to-store metadata]
   (let [enhanced-metadata (assoc metadata
                                  :file-id file-id
-                                 :segment-id segment-id)]
+                                 :segment-id segment-id
+                                 :doc-id file-id)]
     {:file-id file-id
      :segment-id segment-id
-     :content content
-     :embedding embedding
+     :text-to-embed text-to-embed
+     :content-to-store content-to-store
      :metadata enhanced-metadata}))
 
 (defmulti process-document
-  "Process a document and return a sequence of segment maps.
+  "Process a document and return a sequence of segment descriptors.
 
-  Dispatches on strategy keyword. Implementations should:
-  1. Create embeddings from content
-  2. Store embeddings in the embedding-store
-  3. Return sequence of segment maps
+  Dispatches on strategy keyword. Implementations should transform content
+  into segment descriptors that specify what to embed and what to store.
 
   Parameters:
   - strategy: Keyword identifying the processing strategy
-  - embedding-model: LangChain4j EmbeddingModel instance
-  - embedding-store: EmbeddingStore for storing embeddings
   - path: File path (becomes file-id)
   - content: File content string
   - metadata: Base metadata map (without file-id/segment-id)
 
-  Returns: Sequence of maps with keys:
+  Returns: Sequence of segment descriptor maps with keys:
   - :file-id - Shared ID for all segments from this file
   - :segment-id - Unique ID for this segment
-  - :content - Text content stored in vector DB
-  - :embedding - LangChain4j Embedding object
+  - :text-to-embed - Text content to use for embedding generation
+  - :content-to-store - Text content to store in the vector database
   - :metadata - Enhanced metadata including both IDs"
-  (fn [strategy _model _store _path _content _metadata] strategy))
+  (fn [strategy _path _content _metadata] strategy))
 
 (defmethod process-document :whole-document
-  [_strategy ^EmbeddingModel embedding-model ^EmbeddingStore embedding-store path content metadata]
+  [_strategy path content metadata]
   (let [file-id path
-        segment-id (generate-segment-id file-id)
-        ;; Preserve :doc-id for backward compatibility
-        enhanced-metadata (assoc metadata
-                                 :doc-id path
-                                 :file-id file-id
-                                 :segment-id segment-id)
-        lc4j-metadata (build-lc4j-metadata enhanced-metadata)
-        segment (TextSegment/from content lc4j-metadata)
-        response (.embed embedding-model segment)
-        embedding (.content ^dev.langchain4j.model.output.Response response)]
-    (.add ^InMemoryEmbeddingStore embedding-store file-id embedding segment)
-    [(create-segment-map file-id segment-id content embedding enhanced-metadata)]))
+        segment-id (generate-segment-id file-id)]
+    [(create-segment-descriptor file-id segment-id content content metadata)]))
 
 (defmethod process-document :namespace-doc
-  [_strategy ^EmbeddingModel embedding-model ^EmbeddingStore embedding-store path content metadata]
+  [_strategy path content metadata]
   (let [ns-form (parse/parse-first-ns-form content)]
     (when-not ns-form
       (throw (ex-info "No ns form found" {})))
@@ -255,40 +242,14 @@
           (throw (ex-info "Could not extract namespace" {})))
         (let [file-id path
               segment-id (generate-segment-id file-id)
-              ;; Add namespace and preserve :doc-id for backward compatibility
-              enhanced-metadata (assoc metadata
-                                       :namespace namespace
-                                       :doc-id path
-                                       :file-id file-id
-                                       :segment-id segment-id)
-              lc4j-metadata (build-lc4j-metadata enhanced-metadata)
-              ;; Embed the docstring but store the full content
-              docstring-segment (TextSegment/from docstring lc4j-metadata)
-              response (.embed embedding-model docstring-segment)
-              embedding (.content ^dev.langchain4j.model.output.Response response)
-              ;; Create segment with full content for storage
-              full-segment (TextSegment/from content lc4j-metadata)]
-          (.add ^InMemoryEmbeddingStore embedding-store file-id embedding full-segment)
-          [(create-segment-map file-id segment-id content embedding enhanced-metadata)])))))
+              enhanced-metadata (assoc metadata :namespace namespace)]
+          [(create-segment-descriptor file-id segment-id docstring content enhanced-metadata)])))))
 
 (defmethod process-document :file-path
-  [_strategy ^EmbeddingModel embedding-model ^EmbeddingStore embedding-store path content metadata]
+  [_strategy path content metadata]
   (let [file-id path
-        segment-id (generate-segment-id file-id)
-        ;; Preserve :doc-id for backward compatibility
-        enhanced-metadata (assoc metadata
-                                 :doc-id path
-                                 :file-id file-id
-                                 :segment-id segment-id)
-        lc4j-metadata (build-lc4j-metadata enhanced-metadata)
-        ;; Embed full content
-        content-segment (TextSegment/from content lc4j-metadata)
-        response (.embed embedding-model content-segment)
-        embedding (.content ^dev.langchain4j.model.output.Response response)
-        ;; Store only the path
-        path-segment (TextSegment/from path lc4j-metadata)]
-    (.add ^InMemoryEmbeddingStore embedding-store file-id embedding path-segment)
-    [(create-segment-map file-id segment-id path embedding enhanced-metadata)]))
+        segment-id (generate-segment-id file-id)]
+    [(create-segment-descriptor file-id segment-id content path metadata)]))
 
 (def ^:private splitter-cache
   "Memoized cache for DocumentSplitter instances keyed by [chunk-size chunk-overlap]."
@@ -310,7 +271,7 @@
                     {:chunk-size chunk-size :chunk-overlap chunk-overlap :path path}))))
 
 (defmethod process-document :chunked
-  [_strategy ^EmbeddingModel embedding-model ^EmbeddingStore embedding-store path content metadata]
+  [_strategy path content metadata]
   (let [chunk-size (get metadata :chunk-size 512)
         chunk-overlap (get metadata :chunk-overlap 100)
         _ (validate-chunk-config chunk-size chunk-overlap path)
@@ -325,32 +286,42 @@
         (let [chunk-text (.text chunk)
               segment-id (str file-id "-chunk-" chunk-index)
               enhanced-metadata (assoc metadata
-                                       :doc-id path
-                                       :file-id file-id
-                                       :segment-id segment-id
                                        :chunk-index chunk-index
                                        :chunk-count chunk-count
-                                       :chunk-offset char-offset)
-              lc4j-metadata (build-lc4j-metadata enhanced-metadata)
-              segment (TextSegment/from chunk-text lc4j-metadata)
-              response (.embed embedding-model segment)
-              embedding (.content ^dev.langchain4j.model.output.Response response)]
-          (.add ^InMemoryEmbeddingStore embedding-store file-id embedding segment)
+                                       :chunk-offset char-offset)]
           [(+ char-offset (- (count chunk-text) chunk-overlap))
-           (conj result (create-segment-map file-id segment-id chunk-text embedding enhanced-metadata))]))
+           (conj result (create-segment-descriptor file-id segment-id chunk-text chunk-text enhanced-metadata))]))
       [0 []]
       (map-indexed vector chunks)))))
 
 (defn- validate-segment
-  "Validate that a segment map has all required fields.
+  "Validate that a segment descriptor has all required fields and valid values.
   Returns the segment if valid, throws ex-info if invalid."
   [segment]
-  (let [required-keys #{:file-id :segment-id :content :embedding :metadata}
+  (let [required-keys #{:file-id :segment-id :text-to-embed :content-to-store :metadata}
         missing-keys (remove #(contains? segment %) required-keys)]
     (when (seq missing-keys)
-      (throw (ex-info "Malformed segment map: missing required keys"
+      (throw (ex-info "Malformed segment descriptor: missing required keys"
                       {:missing-keys missing-keys
-                       :segment segment}))))
+                       :segment segment})))
+    ;; Validate text-to-embed
+    (let [text-to-embed (:text-to-embed segment)]
+      (when-not (string? text-to-embed)
+        (throw (ex-info "Malformed segment descriptor: :text-to-embed must be a string"
+                        {:text-to-embed text-to-embed
+                         :segment segment})))
+      (when (empty? text-to-embed)
+        (throw (ex-info "Malformed segment descriptor: :text-to-embed cannot be empty"
+                        {:segment segment}))))
+    ;; Validate content-to-store
+    (let [content-to-store (:content-to-store segment)]
+      (when-not (string? content-to-store)
+        (throw (ex-info "Malformed segment descriptor: :content-to-store must be a string"
+                        {:content-to-store content-to-store
+                         :segment segment})))
+      (when (empty? content-to-store)
+        (throw (ex-info "Malformed segment descriptor: :content-to-store cannot be empty"
+                        {:segment segment})))))
   segment)
 
 (defn ingest-file
@@ -366,20 +337,22 @@
    {:keys [file path metadata ingest] :as file-map}]
   (try
     (let [content (slurp file)
-          ;; Process and embed document using the configured ingest pipeline strategy
-          segments (process-document ingest
-                                     embedding-model
-                                     embedding-store
-                                     path
-                                     content
-                                     metadata)]
-      ;; Validate all segments
-      (doseq [segment segments]
-        (validate-segment segment))
-      ;; Track metadata from all segments
+          ;; Process document to get segment descriptors
+          segment-descriptors (process-document ingest path content metadata)]
+      ;; Validate all segment descriptors
+      (doseq [descriptor segment-descriptors]
+        (validate-segment descriptor))
+      ;; Create embeddings and store segments
+      (doseq [{:keys [file-id text-to-embed content-to-store metadata]} segment-descriptors]
+        (let [lc4j-metadata (build-lc4j-metadata metadata)
+              response (.embed ^EmbeddingModel embedding-model text-to-embed)
+              embedding (.content ^dev.langchain4j.model.output.Response response)
+              storage-segment (TextSegment/from content-to-store lc4j-metadata)]
+          (.add ^InMemoryEmbeddingStore embedding-store file-id embedding storage-segment)))
+      ;; Track metadata from all segment descriptors
       (when metadata-values
-        (doseq [segment segments]
-          (record-metadata-values metadata-values (:metadata segment))))
+        (doseq [descriptor segment-descriptors]
+          (record-metadata-values metadata-values (:metadata descriptor))))
       file-map)
     (catch Exception e
       (assoc file-map :error (.getMessage e)))))
