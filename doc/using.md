@@ -150,6 +150,70 @@ Embeds the full content but stores only the file path.
 - One segment per file (1:1 relationship)
 - Reduces memory footprint for large document sets
 
+#### `:chunked`
+
+Splits documents into smaller segments using LangChain4j's recursive text splitter. Enables better semantic search for large documents by creating embeddings for focused chunks rather than entire files.
+
+```clojure
+{:sources [{:path "/docs/**/*.md"
+            :pipeline :chunked
+            :chunk-size 512
+            :chunk-overlap 100}]}
+```
+
+**Use when**: You have large documents and need precise fact-based retrieval where specific information may be buried in lengthy content.
+
+**Configuration**:
+- `:chunk-size` - Maximum characters per chunk (default: 512, approximately 128 tokens)
+- `:chunk-overlap` - Characters to overlap between chunks (default: 100, approximately 20% overlap)
+  - **Note**: LangChain4j's recursive paragraph splitter prioritizes semantic boundaries (paragraph breaks) over exact overlap amounts. Adjacent chunks may have less overlap than specified if splitting at a paragraph boundary. This behavior preserves semantic coherence at the cost of strict overlap guarantees.
+
+**Characteristics**:
+- Multiple segments per file (1:N relationship)
+- Each chunk is embedded and stored independently
+- All chunks from the same file share the same `:doc-id` for batch removal during updates
+- Chunk metadata includes: `:chunk-index` (position), `:chunk-count` (total chunks), `:chunk-offset` (character offset)
+
+**Chunk Sizing Guidance**:
+- **Smaller chunks (256-512 chars)**: Better for precise fact-based retrieval, specific details
+- **Larger chunks (1024+ chars)**: Better for broader context, understanding relationships
+- **Overlap (10-20%)**: Recommended to preserve context at chunk boundaries
+
+**Search Result Interpretation**:
+- Search may return multiple chunks from the same document
+- Each chunk is ranked independently by similarity
+- Use `:chunk-index` and `:chunk-count` metadata to understand relative position
+- Use `:chunk-offset` to locate chunks in original document
+- Consider assembling adjacent chunks for full context
+
+**Example Configurations**:
+
+```clojure
+;; Fine-grained retrieval for technical docs
+{:sources [{:path "/docs/**/*.md"
+            :pipeline :chunked
+            :chunk-size 384
+            :chunk-overlap 75}]}
+
+;; Broader context for narrative content
+{:sources [{:path "/articles/**/*.md"
+            :pipeline :chunked
+            :chunk-size 1024
+            :chunk-overlap 200}]}
+
+;; Compare whole-document vs chunked
+{:sources [
+  ;; Small reference docs - whole document works well
+  {:path "/api-reference/**/*.md"
+   :pipeline :whole-document}
+
+  ;; Large guides - chunking improves precision
+  {:path "/guides/**/*.md"
+   :pipeline :chunked
+   :chunk-size 512
+   :chunk-overlap 100}]}
+```
+
 ## File Watching
 
 Enable automatic re-indexing when files change.

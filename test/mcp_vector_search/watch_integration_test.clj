@@ -301,3 +301,197 @@
                                          (:embedding-model system)))))
           (finally
             (fs/delete-tree temp-dir)))))))
+
+(deftest chunked-pipeline-watch-test
+  ;; Test watch operations with chunked pipeline strategy
+  ;; Verify that file modifications correctly remove all old chunks and create new ones
+
+  (testing "chunked pipeline file operations"
+
+    (testing "creates multiple chunks for large file"
+      (let [temp-dir (fs/create-temp-dir)
+            system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                    :embedding-store (InMemoryEmbeddingStore.)
+                    :metadata-values (atom {})}]
+        (try
+          (let [test-file (fs/file temp-dir "test.md")
+                canonical-path (.getCanonicalPath test-file)
+                ;; Create content >1500 chars to generate multiple chunks
+                ;; With default 512 char chunks, this should create 3-4 chunks
+                test-content (str/join "\n\n"
+                                       ["# Document Title"
+                                        "This is a test document with substantial content to verify chunked ingestion."
+                                        (apply str (repeat 200 "A "))
+                                        (apply str (repeat 200 "B "))
+                                        (apply str (repeat 200 "C "))
+                                        "Final paragraph with some concluding text."])
+                _ (spit test-file test-content)
+                file-map {:file test-file
+                          :path canonical-path
+                          :captures {}
+                          :metadata {}
+                          :pipeline :chunked}]
+
+            ;; Ingest chunked file
+            (ingest/ingest-file system file-map)
+
+            ;; Should have multiple chunks (at least 2)
+            (let [chunk-count (count-embeddings (:embedding-store system)
+                                                (:embedding-model system))]
+              (is (>= chunk-count 2)
+                  (str "Should create at least 2 chunks, got " chunk-count)))
+
+            ;; All chunks should have the same file-id
+            (is (= (count-embeddings (:embedding-store system)
+                                     (:embedding-model system))
+                   (count-embeddings-by-file-id (:embedding-store system)
+                                                 (:embedding-model system)
+                                                 canonical-path))
+                "All chunks should share the same file-id"))
+          (finally
+            (fs/delete-tree temp-dir)))))
+
+    (testing "removes all chunks on file modification"
+      (let [temp-dir (fs/create-temp-dir)
+            system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                    :embedding-store (InMemoryEmbeddingStore.)
+                    :metadata-values (atom {})}]
+        (try
+          (let [test-file (fs/file temp-dir "test.md")
+                canonical-path (.getCanonicalPath test-file)
+                ;; Initial content with 3+ chunks
+                initial-content (str/join "\n\n"
+                                          [(apply str (repeat 200 "A "))
+                                           (apply str (repeat 200 "B "))
+                                           (apply str (repeat 200 "C "))])
+                _ (spit test-file initial-content)
+                file-map {:file test-file
+                          :path canonical-path
+                          :captures {}
+                          :metadata {}
+                          :pipeline :chunked}]
+
+            ;; Initial ingest
+            (ingest/ingest-file system file-map)
+            (let [initial-count (count-embeddings (:embedding-store system)
+                                                  (:embedding-model system))]
+              (is (>= initial-count 2)
+                  (str "Initial ingestion should create at least 2 chunks, got " initial-count))
+
+              ;; Simulate MODIFY: remove all chunks by file-id
+              (let [removed-count (#'watch/remove-by-file-id
+                                    (:embedding-store system)
+                                    (:embedding-model system)
+                                    canonical-path)]
+                (is (= initial-count removed-count)
+                    (str "Should remove all " initial-count " chunks, removed " removed-count)))
+
+              ;; Verify all chunks removed
+              (is (zero? (count-embeddings (:embedding-store system)
+                                           (:embedding-model system)))
+                  "All chunks should be removed after file-id based removal")
+
+              ;; Re-ingest with modified content (different size → different chunk count)
+              (let [modified-content (str/join "\n\n"
+                                               ["Short content"
+                                                (apply str (repeat 150 "D "))])
+                    _ (spit test-file modified-content)]
+                (ingest/ingest-file system file-map)
+
+                ;; Should have new chunks (possibly different count)
+                (let [new-count (count-embeddings (:embedding-store system)
+                                                  (:embedding-model system))]
+                  (is (>= new-count 1)
+                      (str "Re-ingestion should create at least 1 chunk, got " new-count))))))
+          (finally
+            (fs/delete-tree temp-dir)))))
+
+    (testing "removes all chunks on file deletion"
+      (let [temp-dir (fs/create-temp-dir)
+            system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                    :embedding-store (InMemoryEmbeddingStore.)
+                    :metadata-values (atom {})}]
+        (try
+          (let [test-file (fs/file temp-dir "test.md")
+                canonical-path (.getCanonicalPath test-file)
+                test-content (str/join "\n\n"
+                                       [(apply str (repeat 200 "A "))
+                                        (apply str (repeat 200 "B "))
+                                        (apply str (repeat 200 "C "))
+                                        (apply str (repeat 200 "D "))])
+                _ (spit test-file test-content)
+                file-map {:file test-file
+                          :path canonical-path
+                          :captures {}
+                          :metadata {}
+                          :pipeline :chunked}]
+
+            ;; Initial ingest
+            (ingest/ingest-file system file-map)
+            (let [chunk-count (count-embeddings (:embedding-store system)
+                                                (:embedding-model system))]
+              (is (>= chunk-count 2)
+                  (str "Should create at least 2 chunks, got " chunk-count))
+
+              ;; Simulate DELETE: remove all chunks by file-id
+              (let [removed-count (#'watch/remove-by-file-id
+                                    (:embedding-store system)
+                                    (:embedding-model system)
+                                    canonical-path)]
+                (is (= chunk-count removed-count)
+                    (str "Should remove all " chunk-count " chunks, removed " removed-count)))
+
+              ;; Verify all chunks removed
+              (is (zero? (count-embeddings (:embedding-store system)
+                                           (:embedding-model system)))
+                  "All chunks should be removed after deletion")))
+          (finally
+            (fs/delete-tree temp-dir)))))
+
+    (testing "verifies chunk metadata during re-indexing"
+      (let [temp-dir (fs/create-temp-dir)
+            system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                    :embedding-store (InMemoryEmbeddingStore.)
+                    :metadata-values (atom {})}]
+        (try
+          (let [test-file (fs/file temp-dir "test.md")
+                canonical-path (.getCanonicalPath test-file)
+                test-content (str/join "\n\n"
+                                       [(apply str (repeat 200 "A "))
+                                        (apply str (repeat 200 "B "))
+                                        (apply str (repeat 200 "C "))])
+                _ (spit test-file test-content)
+                metadata {:custom "value"
+                          :chunk-size 400
+                          :chunk-overlap 80}]
+
+            ;; Process document directly to get segments
+            (let [segments (ingest/process-document :chunked
+                                                    (:embedding-model system)
+                                                    (:embedding-store system)
+                                                    canonical-path
+                                                    test-content
+                                                    metadata)]
+              ;; Verify all segments have required chunk metadata
+              (is (every? #(contains? (:metadata %) :chunk-index) segments)
+                  "All segments should have :chunk-index")
+              (is (every? #(contains? (:metadata %) :chunk-count) segments)
+                  "All segments should have :chunk-count")
+              (is (every? #(contains? (:metadata %) :chunk-offset) segments)
+                  "All segments should have :chunk-offset")
+
+              ;; Verify custom metadata propagated to all chunks
+              (is (every? #(= "value" (get-in % [:metadata :custom])) segments)
+                  "Custom metadata should propagate to all chunks")
+
+              ;; Verify chunk indices are sequential
+              (let [indices (map #(get-in % [:metadata :chunk-index]) segments)]
+                (is (= (range (count segments)) indices)
+                    "Chunk indices should be sequential from 0"))
+
+              ;; Verify all chunks know the total count
+              (let [total-count (count segments)]
+                (is (every? #(= total-count (get-in % [:metadata :chunk-count])) segments)
+                    "All chunks should have same :chunk-count"))))
+          (finally
+            (fs/delete-tree temp-dir)))))))

@@ -19,7 +19,10 @@
     [mcp-vector-search.parse :as parse])
   (:import
     (dev.langchain4j.data.document
+      Document
       Metadata)
+    (dev.langchain4j.data.document.splitter
+      DocumentSplitters)
     (dev.langchain4j.data.embedding
       Embedding)
     (dev.langchain4j.data.segment
@@ -286,6 +289,57 @@
         path-segment (TextSegment/from path lc4j-metadata)]
     (.add ^InMemoryEmbeddingStore embedding-store file-id embedding path-segment)
     [(create-segment-map file-id segment-id path embedding enhanced-metadata)]))
+
+(def ^:private splitter-cache
+  "Memoized cache for DocumentSplitter instances keyed by [chunk-size chunk-overlap]."
+  (memoize
+    (fn [chunk-size chunk-overlap]
+      (DocumentSplitters/recursive (int chunk-size) (int chunk-overlap)))))
+
+(defn- validate-chunk-config
+  "Validates chunk configuration values, throwing detailed errors for invalid settings."
+  [chunk-size chunk-overlap path]
+  (when-not (and (integer? chunk-size) (pos? chunk-size))
+    (throw (ex-info (str "Invalid :chunk-size for " path ": must be a positive integer")
+                    {:chunk-size chunk-size :path path})))
+  (when-not (and (integer? chunk-overlap) (>= chunk-overlap 0))
+    (throw (ex-info (str "Invalid :chunk-overlap for " path ": must be a non-negative integer")
+                    {:chunk-overlap chunk-overlap :path path})))
+  (when-not (< chunk-overlap chunk-size)
+    (throw (ex-info (str "Invalid chunk configuration for " path ": :chunk-overlap must be less than :chunk-size")
+                    {:chunk-size chunk-size :chunk-overlap chunk-overlap :path path}))))
+
+(defmethod process-document :chunked
+  [_strategy ^EmbeddingModel embedding-model ^EmbeddingStore embedding-store path content metadata]
+  (let [chunk-size (get metadata :chunk-size 512)
+        chunk-overlap (get metadata :chunk-overlap 100)
+        _ (validate-chunk-config chunk-size chunk-overlap path)
+        splitter (splitter-cache chunk-size chunk-overlap)
+        document (Document/from content)
+        chunks (.split splitter document)
+        chunk-count (count chunks)
+        file-id path]
+    (second
+     (reduce
+      (fn [[char-offset result] [chunk-index chunk]]
+        (let [chunk-text (.text chunk)
+              segment-id (str file-id "-chunk-" chunk-index)
+              enhanced-metadata (assoc metadata
+                                       :doc-id path
+                                       :file-id file-id
+                                       :segment-id segment-id
+                                       :chunk-index chunk-index
+                                       :chunk-count chunk-count
+                                       :chunk-offset char-offset)
+              lc4j-metadata (build-lc4j-metadata enhanced-metadata)
+              segment (TextSegment/from chunk-text lc4j-metadata)
+              response (.embed embedding-model segment)
+              embedding (.content ^dev.langchain4j.model.output.Response response)]
+          (.add ^InMemoryEmbeddingStore embedding-store file-id embedding segment)
+          [(+ char-offset (- (count chunk-text) chunk-overlap))
+           (conj result (create-segment-map file-id segment-id chunk-text embedding enhanced-metadata))]))
+      [0 []]
+      (map-indexed vector chunks)))))
 
 (defn- validate-segment
   "Validate that a segment map has all required fields.
