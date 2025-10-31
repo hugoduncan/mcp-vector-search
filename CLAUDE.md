@@ -10,7 +10,7 @@ An MCP (Model Context Protocol) server that indexes documents using semantic emb
 
 **Key capabilities**:
 - Semantic search across documentation, code, and knowledge bases
-- Configurable pipeline strategies (`:whole-document`, `:namespace-doc`, `:file-path`)
+- Configurable ingest pipeline strategies (`:whole-document`, `:namespace-doc`, `:file-path`)
 - Metadata filtering to narrow searches
 - File watching for automatic re-indexing during development
 
@@ -67,7 +67,7 @@ Config structure:
  :watch? true                                   ; optional, enable file watching
  :sources [{:path "/docs/**/*.md"
             :name "Documentation"               ; optional, added to metadata
-            :pipeline :whole-document           ; optional, defaults to :whole-document
+            :ingest :whole-document             ; optional, defaults to :whole-document
             :watch? true                        ; optional, overrides global :watch?
             :custom-key "custom-value"}]}       ; any additional keys become metadata
 ```
@@ -82,7 +82,7 @@ The `process-config` function transforms `:sources` into `:path-specs` with pars
 
 See `doc/path-spec.md` for formal path specification syntax and `doc/using.md` for comprehensive configuration guide.
 
-### Processing Strategies
+### Ingest Pipeline Strategies
 
 Configurable via the `process-document` multimethod to support different document processing approaches.
 
@@ -95,11 +95,11 @@ Configurable via the `process-document` multimethod to support different documen
 ```clojure
 ;; Search by namespace doc, return full source
 {:path "/src/**/*.clj"
- :pipeline :namespace-doc}
+ :ingest :namespace-doc}
 
 ;; Search by content, return only paths
 {:path "/docs/**/*.md"
- :pipeline :file-path}
+ :ingest :file-path}
 ```
 
 To add new strategies, implement the `process-document` multimethod:
@@ -121,7 +121,7 @@ See `ingest.clj:230-244` for `:whole-document`, `ingest.clj:246-273` for `:names
 - Metadata filtering uses LangChain4j `IsEqualTo` filters combined with AND logic
 
 **Metadata Keys**:
-- Any keys in source config (except `:path`, `:name`, `:pipeline`, `:watch?`) become base metadata
+- Any keys in source config (except `:path`, `:name`, `:ingest`, `:watch?`) become base metadata
 - Named captures from path specs (e.g., `(?<category>[^/]+)`) are added as metadata
 - `:name` key is also added to metadata if provided
 - `:doc-id` is automatically added with the file path (used for watch updates/deletes)
@@ -247,7 +247,7 @@ Regex captures are extracted and merged with base-metadata to produce final file
     [(create-segment-map file-id segment-id content embedding enhanced-metadata)]))
 ```
 
-2. Document the strategy in `doc/using.md` under "Processing Strategies"
+2. Document the strategy in `doc/using.md` under "Ingest Pipeline Strategies"
 3. Add tests in `test/mcp_vector_search/ingest_test.clj`
 
 ### Testing Configuration Changes

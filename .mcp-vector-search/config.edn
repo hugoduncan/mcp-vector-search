@@ -2,9 +2,9 @@
  :watch? true
  :sources [{:path "/docs/**/*.md"
             :name "Documentation"
-            :pipeline :whole-document
+            :ingest :chunked
             :category "docs"}
            {:path "/src/**/*.clj"
             :name "Source Code"
-            :pipeline :namespace-doc
+            :ingest :namespace-doc
             :category "code"}]}

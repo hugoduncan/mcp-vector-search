@@ -152,22 +152,22 @@
             result (sut/process-config config)]
         (is (= sut/default-search-description (:description result)))))
 
-    (testing "adds default :pipeline strategy"
+    (testing "adds default :ingest strategy"
       (let [config {:sources [{:path "/docs/*.md"}]}
             result (sut/process-config config)]
         (is (= 1 (count (:path-specs result))))
-        (is (= :whole-document (get-in result [:path-specs 0 :pipeline])))))
+        (is (= :whole-document (get-in result [:path-specs 0 :ingest])))))
 
-    (testing "preserves explicit :pipeline strategy"
+    (testing "preserves explicit :ingest strategy"
       (let [config {:sources [{:path "/docs/*.md"
-                               :pipeline :custom-pipeline}]}
+                               :ingest :custom-pipeline}]}
             result (sut/process-config config)]
-        (is (= :custom-pipeline (get-in result [:path-specs 0 :pipeline])))))
+        (is (= :custom-pipeline (get-in result [:path-specs 0 :ingest])))))
 
-    (testing ":pipeline is not included in base-metadata"
+    (testing ":ingest is not included in base-metadata"
       (let [config {:sources [{:path "/docs/*.md"
-                               :pipeline :whole-document
+                               :ingest :whole-document
                                :category "docs"}]}
             result (sut/process-config config)]
         (is (= {:category "docs"} (get-in result [:path-specs 0 :base-metadata])))
-        (is (nil? (get-in result [:path-specs 0 :base-metadata :pipeline])))))))
+        (is (nil? (get-in result [:path-specs 0 :base-metadata :ingest])))))))

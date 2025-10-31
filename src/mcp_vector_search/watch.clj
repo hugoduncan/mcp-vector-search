@@ -132,7 +132,7 @@
             (#{:create :modify} kind)
             (let [file (io/file path)
                   base-metadata (:base-metadata path-spec)
-                  pipeline (:pipeline path-spec)
+                  ingest (:ingest path-spec)
                   pattern (build-pattern (:segments path-spec))
                   matcher (re-matcher pattern path)]
               (if (.matches matcher)
@@ -142,7 +142,7 @@
                                 :path path
                                 :captures captures
                                 :metadata metadata
-                                :pipeline pipeline}]
+                                :ingest ingest}]
 
                   (when (= kind :modify)
                     (log-if-server

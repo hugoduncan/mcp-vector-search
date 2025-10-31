@@ -193,7 +193,7 @@ Metadata enables filtering searches to specific subsets:
 For file `/docs/api/auth.md`:
 - Metadata: `{:project "myapp", :type "documentation", :category "api"}`
 
-Any keys except `:path`, `:name`, `:pipeline`, and `:watch?` become metadata. Named captures (`(?<name>...)`) are also added as metadata.
+Any keys except `:path`, `:name`, `:ingest`, and `:watch?` become metadata. Named captures (`(?<name>...)`) are also added as metadata.
 
 See [doc/path-spec.md](doc/path-spec.md) for the formal path specification syntax.
 
@@ -262,22 +262,22 @@ The assistant can use metadata filters like:
 
 ## Advanced Features
 
-### Pipeline Strategies
+### Ingest Pipeline Strategies
 
-Processing strategies control how documents are processed, embedded, and stored. Set via the `:pipeline` key.
+Processing strategies control how documents are processed, embedded, and stored. Set via the `:ingest` key.
 
 **`:whole-document` (default)** - Embeds and stores entire file:
 
 ```clojure
 {:sources [{:path "/docs/**/*.md"
-            :pipeline :whole-document}]}
+            :ingest :whole-document}]}
 ```
 
 **`:namespace-doc`** - For Clojure files, embeds only namespace docstring but returns full file:
 
 ```clojure
 {:sources [{:path "/src/**/*.clj"
-            :pipeline :namespace-doc}]}
+            :ingest :namespace-doc}]}
 ```
 
 Useful for searching Clojure namespaces by description while returning complete source code. Adds `:namespace` to metadata.
@@ -286,7 +286,7 @@ Useful for searching Clojure namespaces by description while returning complete 
 
 ```clojure
 {:sources [{:path "/archive/**/*.txt"
-            :pipeline :file-path}]}
+            :ingest :file-path}]}
 ```
 
 Reduces memory for large document sets. Embeddings are still created from full content, but search results only include file paths. Your client can read files separately.
@@ -332,19 +332,19 @@ Customize the search tool description for AI assistants:
 
    ;; Clojure source - search by namespace doc
    {:path "/src/**/*.clj"
-    :pipeline :namespace-doc
+    :ingest :namespace-doc
     :project "myapp"
     :type "source"}
 
    ;; Test files
    {:path "/test/**/*.clj"
-    :pipeline :namespace-doc
+    :ingest :namespace-doc
     :project "myapp"
     :type "test"}
 
    ;; Large archive - path-only to save memory
    {:path "/archive/**/*.txt"
-    :pipeline :file-path
+    :ingest :file-path
     :watch? false}]}
 ```
 

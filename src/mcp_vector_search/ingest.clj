@@ -83,15 +83,15 @@
   - :segments - parsed segment structure
   - :base-path - starting directory for filesystem walk
   - :base-metadata (optional) - metadata to merge with captures
-  - :pipeline - processing strategy
+  - :ingest - processing strategy
 
   Returns a sequence of maps:
   - :file - java.io.File object
   - :path - file path string
   - :captures - map of captured values
   - :metadata - merged base metadata and captures
-  - :pipeline - processing strategy"
-  [{:keys [segments base-path base-metadata pipeline]}]
+  - :ingest - processing strategy"
+  [{:keys [segments base-path base-metadata ingest]}]
   (let [base-file (io/file base-path)
         ;; Normalize paths only if they're absolute (to handle symlinks like /var -> /private/var)
         ;; Keep relative paths as-is to preserve test compatibility
@@ -134,7 +134,7 @@
             :path      path
             :captures  {}
             :metadata  (or base-metadata {})
-            :pipeline pipeline}]))
+            :ingest ingest}]))
       ;; Directory - walk and match
       (let [files (if (.isDirectory base-file)
                     (filter #(.isFile ^File %) (walk-files base-file))
@@ -149,7 +149,7 @@
                              :path      path
                              :captures  captures
                              :metadata  (merge base-metadata captures)
-                             :pipeline pipeline}))))
+                             :ingest ingest}))))
                     files))))))
 
 ;; Ingestion strategies
@@ -358,16 +358,16 @@
 
   Takes a system map with :embedding-model, :embedding-store,
   and :metadata-values, and a file map from files-from-path-spec
-  with :file, :path, :metadata, and :pipeline strategy keys.
+  with :file, :path, :metadata, and :ingest strategy keys.
 
   Returns the file map on success, or the file map with an :error key on
   failure."
   [{:keys [embedding-model embedding-store metadata-values]}
-   {:keys [file path metadata pipeline] :as file-map}]
+   {:keys [file path metadata ingest] :as file-map}]
   (try
     (let [content (slurp file)
-          ;; Process document using unified pipeline
-          segments (process-document pipeline
+          ;; Process and embed document using the configured ingest pipeline strategy
+          segments (process-document ingest
                                      embedding-model
                                      embedding-store
                                      path

@@ -28,12 +28,12 @@
           (let [path-spec {:segments [{:type :literal
                                        :value (.getPath test-file)}]
                            :base-path (.getPath test-file)
-                           :pipeline :whole-document}
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)]
             (is (= 1 (count results)))
             (is (= (.getPath test-file) (:path (first results))))
             (is (= {} (:captures (first results))))
-            (is (= :whole-document (:pipeline (first results)))))
+            (is (= :whole-document (:ingest (first results)))))
           (finally
             (.delete test-file)
             (.delete test-dir)))))
@@ -53,7 +53,7 @@
                                       {:type :glob :pattern "*"}
                                       {:type :literal :value ".md"}]
                            :base-path (.getPath test-dir)
-                           :pipeline :whole-document}
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)
                 paths (set (map :path results))]
             (is (= 2 (count results)))
@@ -80,7 +80,7 @@
                                       {:type :glob :pattern "**"}
                                       {:type :literal :value ".md"}]
                            :base-path (.getPath test-dir)
-                           :pipeline :whole-document}
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)
                 paths (set (map :path results))]
             (is (= 2 (count results)))
@@ -104,7 +104,7 @@
                                       {:type :literal :value "/v"}
                                       {:type :capture :name "version" :pattern "[0-9.]+"}]
                            :base-path (.getPath test-dir)
-                           :pipeline :whole-document}
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)
                 by-path (into {} (map (fn [r] [(:path r) r]) results))]
             (is (= 2 (count results)))
@@ -131,7 +131,7 @@
                                       {:type :capture :name "topic" :pattern "[^.]+"}
                                       {:type :literal :value ".md"}]
                            :base-path (.getPath test-dir)
-                           :pipeline :whole-document}
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)]
             (is (= 1 (count results)))
             (is (= "clj" (get-in results [0 :captures :lang])))
@@ -162,7 +162,7 @@
                                       {:type :capture :name "doc" :pattern "[^.]+"}
                                       {:type :literal :value ".md"}]
                            :base-path (.getPath test-dir)
-                           :pipeline :whole-document}
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)
                 by-path (into {} (map (fn [r] [(:path r) r]) results))]
             (is (= 2 (count results)))
@@ -189,7 +189,7 @@
                                       {:type :literal :value ".txt"}]
                            :base-path (.getPath test-dir)
                            :base-metadata {:source "docs" :type "guide"}
-                           :pipeline :whole-document}
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)]
             (is (= 1 (count results)))
             (is (= {:source "docs" :type "guide" :version "v1"}
@@ -205,7 +205,7 @@
           (let [path-spec {:segments [{:type :literal :value (.getPath test-dir)}
                                       {:type :literal :value "/nonexistent.md"}]
                            :base-path (.getPath test-dir)
-                           :pipeline :whole-document}
+                           :ingest :whole-document}
                 results (sut/files-from-path-spec path-spec)]
             (is (empty? results)))
           (finally
@@ -226,7 +226,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:source "test"}
-                            :pipeline :whole-document}]
+                            :ingest :whole-document}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= 0 (:failed result)))
@@ -248,11 +248,11 @@
                 file-maps [{:file file1
                             :path (.getPath file1)
                             :metadata {:version "v1"}
-                            :pipeline :whole-document}
+                            :ingest :whole-document}
                            {:file file2
                             :path (.getPath file2)
                             :metadata {:version "v2"}
-                            :pipeline :whole-document}]
+                            :ingest :whole-document}]
                 result (sut/ingest-files system file-maps)]
             (is (= 2 (:ingested result)))
             (is (= 0 (:failed result))))
@@ -268,7 +268,7 @@
             file-maps [{:file nonexistent-file
                         :path (.getPath nonexistent-file)
                         :metadata {}
-                        :pipeline :whole-document}]
+                        :ingest :whole-document}]
             result (sut/ingest-files system file-maps)]
         (is (= 0 (:ingested result)))
         (is (= 1 (:failed result)))
@@ -296,7 +296,7 @@
                                      {:type :literal :value ".md"}]
                           :base-path (.getPath test-dir)
                           :base-metadata {:type "doc"}
-                          :pipeline :whole-document}]}
+                          :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 2 (:ingested result)))
             (is (= 0 (:failed result))))
@@ -320,10 +320,10 @@
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath file1)}]
                           :base-path (.getPath file1)
-                          :pipeline :whole-document}
+                          :ingest :whole-document}
                          {:segments [{:type :literal :value (.getPath file2)}]
                           :base-path (.getPath file2)
-                          :pipeline :whole-document}]}
+                          :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 2 (:ingested result)))
             (is (= 0 (:failed result))))
@@ -343,7 +343,7 @@
                         [{:segments [{:type :literal :value (.getPath test-dir)}
                                      {:type :literal :value "/nonexistent.txt"}]
                           :base-path (.getPath test-dir)
-                          :pipeline :whole-document}]}
+                          :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 0 (:ingested result)))
             (is (= 0 (:failed result))))
@@ -376,7 +376,7 @@
                                      {:type :literal :value ".md"}]
                           :base-path (.getPath test-dir)
                           :base-metadata {:type "doc"}
-                          :pipeline :whole-document}]}
+                          :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 3 (:ingested result)))
             (is (= #{:version :type :doc-id :file-id :segment-id} (set (keys @metadata-values))))
@@ -404,12 +404,12 @@
                          [{:segments [{:type :literal :value (.getPath file1)}]
                            :base-path (.getPath file1)
                            :base-metadata {:category "type1"}
-                           :pipeline :whole-document}]}
+                           :ingest :whole-document}]}
                 config2 {:path-specs
                          [{:segments [{:type :literal :value (.getPath file2)}]
                            :base-path (.getPath file2)
                            :base-metadata {:category "type2"}
-                           :pipeline :whole-document}]}]
+                           :ingest :whole-document}]}]
             (sut/ingest system config1)
             (is (= #{"type1"} (:category @metadata-values)))
             (sut/ingest system config2)
@@ -432,7 +432,7 @@
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath file1)}]
                           :base-path (.getPath file1)
-                          :pipeline :whole-document}]}
+                          :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 1 (:ingested result)))
             (is (= #{:doc-id :file-id :segment-id} (set (keys @metadata-values))))
@@ -459,7 +459,7 @@
                                      {:type :glob :pattern "*"}
                                      {:type :literal :value ".txt"}]
                           :base-path (.getPath test-dir)
-                          :pipeline :whole-document}]}
+                          :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 2 (:ingested result)))
             (is (= #{(.getPath file1) (.getPath file2)} (:doc-id @metadata-values))))
@@ -486,7 +486,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:source "test"}
-                            :pipeline :namespace-doc}]
+                            :ingest :namespace-doc}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= 0 (:failed result)))
@@ -507,7 +507,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
-                            :pipeline :namespace-doc}]
+                            :ingest :namespace-doc}]
                 result (sut/ingest-files system file-maps)]
             (is (= 0 (:ingested result)))
             (is (= 1 (:failed result)))
@@ -527,7 +527,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
-                            :pipeline :namespace-doc}]
+                            :ingest :namespace-doc}]
                 result (sut/ingest-files system file-maps)]
             (is (= 0 (:ingested result)))
             (is (= 1 (:failed result)))
@@ -547,7 +547,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
-                            :pipeline :namespace-doc}]
+                            :ingest :namespace-doc}]
                 result (sut/ingest-files system file-maps)]
             (is (= 0 (:ingested result)))
             (is (= 1 (:failed result))))
@@ -568,7 +568,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:type "lib"}
-                            :pipeline :namespace-doc}]
+                            :ingest :namespace-doc}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= #{"com.example"} (:namespace @metadata-values)))
@@ -590,7 +590,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
-                            :pipeline :namespace-doc}]
+                            :ingest :namespace-doc}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= #{(.getPath test-file)} (:doc-id @metadata-values))))
@@ -614,7 +614,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:source "test"}
-                            :pipeline :file-path}]
+                            :ingest :file-path}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= 0 (:failed result)))
@@ -646,7 +646,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:category "docs" :version "v1"}
-                            :pipeline :file-path}]
+                            :ingest :file-path}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= #{"docs"} (:category @metadata-values)))
@@ -685,11 +685,11 @@
                 file-maps [{:file file1
                             :path (.getPath file1)
                             :metadata {}
-                            :pipeline :file-path}
+                            :ingest :file-path}
                            {:file file2
                             :path (.getPath file2)
                             :metadata {}
-                            :pipeline :file-path}]
+                            :ingest :file-path}]
                 result (sut/ingest-files system file-maps)]
             (is (= 2 (:ingested result)))
             ;; Verify both paths are returned via search
@@ -1179,7 +1179,7 @@
                            :base-metadata {:source "docs"
                                            :chunk-size 200
                                            :chunk-overlap 50}
-                           :pipeline :chunked}
+                           :ingest :chunked}
                 file-maps (sut/files-from-path-spec path-spec)
                 _ (is (= 1 (count file-maps)) "Should find one matching file")
                 file-map (first file-maps)
@@ -1221,7 +1221,7 @@
                            :base-metadata {:name "Test Documentation"
                                            :chunk-size 200
                                            :chunk-overlap 50}
-                           :pipeline :chunked}
+                           :ingest :chunked}
                 file-maps (sut/files-from-path-spec path-spec)
                 file-map (first file-maps)
                 embedding-model (AllMiniLmL6V2EmbeddingModel.)
@@ -1284,7 +1284,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:source "test"}
-                            :pipeline :test-multi-segment}]
+                            :ingest :test-multi-segment}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= 0 (:failed result)))
@@ -1336,7 +1336,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
-                            :pipeline :test-varying-metadata}]
+                            :ingest :test-varying-metadata}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             ;; Both segment types should be tracked
@@ -1365,7 +1365,7 @@
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
-                            :pipeline :test-malformed}]
+                            :ingest :test-malformed}]
                 result (sut/ingest-files system file-maps)]
             ;; Should fail with error
             (is (= 0 (:ingested result)))

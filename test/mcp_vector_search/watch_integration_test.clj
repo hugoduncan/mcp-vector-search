@@ -105,7 +105,7 @@
                             :path canonical-path
                             :captures {}
                             :metadata {}
-                            :pipeline :whole-document}]
+                            :ingest :whole-document}]
               (ingest/ingest-file system file-map))
 
             ;; Should still have 1 document
@@ -158,7 +158,7 @@
                           :path (str new-file)
                           :captures {}
                           :metadata {}
-                          :pipeline :whole-document}]
+                          :ingest :whole-document}]
             (ingest/ingest-file system file-map))
 
           ;; Should have 1 document
@@ -179,7 +179,7 @@
                           :path canonical-path
                           :captures {}
                           :metadata {}
-                          :pipeline :whole-document}]
+                          :ingest :whole-document}]
 
             ;; Simulate rapid changes (last one wins after debouncing)
             (dotimes [i 5]
@@ -212,7 +212,7 @@
                           :path canonical-path
                           :captures {}
                           :metadata {}
-                          :pipeline :test-watch-multi-segment}]
+                          :ingest :test-watch-multi-segment}]
 
             ;; Ingest multi-segment file
             (ingest/ingest-file system file-map)
@@ -241,7 +241,7 @@
                           :path canonical-path
                           :captures {}
                           :metadata {}
-                          :pipeline :test-watch-multi-segment}]
+                          :ingest :test-watch-multi-segment}]
 
             ;; Initial ingest - 3 segments
             (ingest/ingest-file system file-map)
@@ -282,7 +282,7 @@
                           :path canonical-path
                           :captures {}
                           :metadata {}
-                          :pipeline :test-watch-multi-segment}]
+                          :ingest :test-watch-multi-segment}]
 
             ;; Initial ingest - 4 segments
             (ingest/ingest-file system file-map)
@@ -330,7 +330,7 @@
                           :path canonical-path
                           :captures {}
                           :metadata {}
-                          :pipeline :chunked}]
+                          :ingest :chunked}]
 
             ;; Ingest chunked file
             (ingest/ingest-file system file-map)
@@ -369,7 +369,7 @@
                           :path canonical-path
                           :captures {}
                           :metadata {}
-                          :pipeline :chunked}]
+                          :ingest :chunked}]
 
             ;; Initial ingest
             (ingest/ingest-file system file-map)
@@ -424,7 +424,7 @@
                           :path canonical-path
                           :captures {}
                           :metadata {}
-                          :pipeline :chunked}]
+                          :ingest :chunked}]
 
             ;; Initial ingest
             (ingest/ingest-file system file-map)

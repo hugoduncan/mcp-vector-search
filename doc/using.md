@@ -29,7 +29,7 @@ The server reads the configuration file at startup and indexes all specified sou
  :watch? true
  :sources [{:path "/docs/**/*.md"
             :name "Documentation"
-            :pipeline :whole-document
+            :ingest :whole-document
             :watch? true
             :custom-key "custom-value"}]}
 ```
@@ -64,7 +64,7 @@ Path specs define which files to index and support:
 
 Metadata comes from two sources:
 
-1. **Base metadata**: Any additional keys in the source map (except `:path`, `:name`, `:pipeline`, `:watch?`)
+1. **Base metadata**: Any additional keys in the source map (except `:path`, `:name`, `:ingest`, `:watch?`)
 2. **Captures**: Values extracted from named groups in the path spec
 
 ```clojure
@@ -78,9 +78,9 @@ For a file `/docs/api/functions.md`:
 
 The `:name` key, if provided, is also added to metadata.
 
-## Processing Strategies
+## Ingest Pipeline Strategies
 
-Processing strategies control how documents are processed, embedded, and stored. Set via the `:pipeline` key.
+Ingest pipeline strategies control how documents are processed, embedded, and stored. Set via the `:ingest` key.
 
 ### Understanding File-ID vs Segment-ID
 
@@ -91,7 +91,7 @@ The ingestion system uses two levels of identification:
 
 Each segment map contains: `:file-id`, `:segment-id`, `:content`, `:embedding`, and `:metadata`.
 
-### Built-in Pipeline Strategies
+### Built-in Ingest Pipeline Strategies
 
 #### `:whole-document` (default)
 
@@ -99,7 +99,7 @@ Embeds and stores the entire file content as a single segment.
 
 ```clojure
 {:sources [{:path "/docs/**/*.md"
-            :pipeline :whole-document}]}
+            :ingest :whole-document}]}
 ```
 
 **Use when**: You want to search across complete documents and return full content.
@@ -115,7 +115,7 @@ For Clojure source files - embeds only the namespace docstring but stores the fu
 
 ```clojure
 {:sources [{:path "/src/**/*.clj"
-            :pipeline :namespace-doc}]}
+            :ingest :namespace-doc}]}
 ```
 
 **Use when**: You want to search Clojure namespaces by their documentation while still returning the complete source code.
@@ -136,7 +136,7 @@ Embeds the full content but stores only the file path.
 
 ```clojure
 {:sources [{:path "/docs/**/*.md"
-            :pipeline :file-path}]}
+            :ingest :file-path}]}
 ```
 
 **Use when**:
@@ -156,7 +156,7 @@ Splits documents into smaller segments using LangChain4j's recursive text splitt
 
 ```clojure
 {:sources [{:path "/docs/**/*.md"
-            :pipeline :chunked
+            :ingest :chunked
             :chunk-size 512
             :chunk-overlap 100}]}
 ```
@@ -191,13 +191,13 @@ Splits documents into smaller segments using LangChain4j's recursive text splitt
 ```clojure
 ;; Fine-grained retrieval for technical docs
 {:sources [{:path "/docs/**/*.md"
-            :pipeline :chunked
+            :ingest :chunked
             :chunk-size 384
             :chunk-overlap 75}]}
 
 ;; Broader context for narrative content
 {:sources [{:path "/articles/**/*.md"
-            :pipeline :chunked
+            :ingest :chunked
             :chunk-size 1024
             :chunk-overlap 200}]}
 
@@ -205,11 +205,11 @@ Splits documents into smaller segments using LangChain4j's recursive text splitt
 {:sources [
   ;; Small reference docs - whole document works well
   {:path "/api-reference/**/*.md"
-   :pipeline :whole-document}
+   :ingest :whole-document}
 
   ;; Large guides - chunking improves precision
   {:path "/guides/**/*.md"
-   :pipeline :chunked
+   :ingest :chunked
    :chunk-size 512
    :chunk-overlap 100}]}
 ```
@@ -296,7 +296,7 @@ The search tool dynamically generates JSON schema enums based on metadata values
 ```clojure
 {:sources [
   {:path "/projects/(?<project>[^/]+)/src/**/*.clj"
-   :pipeline :namespace-doc
+   :ingest :namespace-doc
    :type "clojure"}
 
   {:path "/projects/(?<project>[^/]+)/docs/**/*.md"
@@ -309,11 +309,11 @@ The search tool dynamically generates JSON schema enums based on metadata values
 {:watch? true
  :sources [
   {:path "/src/**/*.clj"
-   :pipeline :namespace-doc
+   :ingest :namespace-doc
    :category "source"}
 
   {:path "/test/**/*.clj"
-   :pipeline :namespace-doc
+   :ingest :namespace-doc
    :category "test"}
 
   {:path "/doc/**/*.md"
@@ -324,7 +324,7 @@ The search tool dynamically generates JSON schema enums based on metadata values
 
 ```clojure
 {:sources [{:path "/large-archive/**/*.txt"
-            :pipeline :file-path
+            :ingest :file-path
             :archive "historical"}]}
 ```
 
@@ -369,7 +369,7 @@ clojure -X:mcp-vector-search :config-path '"/path/to/config.edn"'
 
 ### Namespace Embedding Errors
 
-When using `:pipeline :namespace-doc`:
+When using `:ingest :namespace-doc`:
 - File must contain a valid `ns` form
 - Namespace must have a docstring (first string after namespace symbol)
 - Check for syntax errors in the `ns` form
@@ -377,15 +377,15 @@ When using `:pipeline :namespace-doc`:
 ### Memory Issues
 
 For large document sets:
-- Use `:pipeline :file-path` to reduce stored content
+- Use `:ingest :file-path` to reduce stored content
 - Reduce the number of indexed files
 - Consider splitting into multiple server instances
 
 ## Advanced Topics
 
-### Custom Pipeline Strategies
+### Custom Ingest Pipeline Strategies
 
-To add custom processing strategies, implement the `process-document` multimethod in your fork:
+To add custom ingest pipeline strategies, implement the `process-document` multimethod in your fork:
 
 ```clojure
 (defmethod mcp-vector-search.ingest/process-document :custom-strategy
@@ -431,46 +431,3 @@ All embeddings are automatically tagged with a `:doc-id` metadata field containi
 - Identifying the source file for search results
 
 When a file is updated or deleted during file watching, all segments with matching `:doc-id` (file-ID) are removed before re-indexing.
-
-## Migration Guide
-
-If you have an existing configuration using the deprecated `:embedding` and `:ingest` keys, migrate to the `:pipeline` key.
-
-### Old Configuration Format (Deprecated)
-
-```clojure
-{:sources [
-  {:path "/docs/**/*.md"
-   :embedding :whole-document
-   :ingest :whole-document}
-
-  {:path "/src/**/*.clj"
-   :embedding :namespace-doc
-   :ingest :whole-document}
-
-  {:path "/archive/**/*.txt"
-   :embedding :whole-document
-   :ingest :file-path}]}
-```
-
-### New Configuration Format
-
-```clojure
-{:sources [
-  {:path "/docs/**/*.md"
-   :pipeline :whole-document}
-
-  {:path "/src/**/*.clj"
-   :pipeline :namespace-doc}
-
-  {:path "/archive/**/*.txt"
-   :pipeline :file-path}]}
-```
-
-### Migration Rules
-
-- **`:embedding :whole-document` + `:ingest :whole-document`** → `:pipeline :whole-document`
-- **`:embedding :namespace-doc` + `:ingest :whole-document`** → `:pipeline :namespace-doc`
-- **`:embedding :whole-document` + `:ingest :file-path`** → `:pipeline :file-path`
-
-The `:pipeline` key consolidates both embedding and ingestion strategies into a single unified pipeline concept.
