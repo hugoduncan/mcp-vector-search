@@ -130,6 +130,20 @@
      :base-path base-path}))
 
 
+(defn- validate-single-segment-source
+  "Validate that :single-segment ingest has required strategy keys.
+  Throws ex-info if validation fails."
+  [{:keys [path ingest embedding content-strategy] :as source}]
+  (when (= :single-segment ingest)
+    (when-not embedding
+      (throw (ex-info "Missing :embedding key for :single-segment ingest"
+                      {:source source
+                       :path path})))
+    (when-not content-strategy
+      (throw (ex-info "Missing :content-strategy key for :single-segment ingest"
+                      {:source source
+                       :path path})))))
+
 (defn process-config
   "Process user config into internal format.
 
@@ -139,9 +153,13 @@
   Each source entry should have:
   - :path - raw path spec string
   - :name (optional) - source name
-  - :ingest (optional) - ingest pipeline strategy (:whole-document, :namespace-doc, :file-path, :chunked), defaults to :whole-document
+  - :ingest (optional) - ingest pipeline strategy (:whole-document, :namespace-doc, :file-path, :chunked, :single-segment), defaults to :whole-document
   - :watch? (optional) - enable file watching, defaults to global :watch? or false
   - additional keys become base-metadata
+
+  For :single-segment ingest:
+  - :embedding (required) - embedding strategy keyword
+  - :content-strategy (required) - content extraction strategy keyword
 
   Global config keys:
   - :watch? - global default for file watching (default: false)
@@ -149,6 +167,7 @@
 
   Adds :description with default if not provided.
   Adds :ingest and :watch? defaults to each path-spec.
+  Validates :single-segment configurations.
 
   Returns a config map with :path-specs ready for ingestion."
   [{:keys [sources description watch?] :as _config}]
@@ -156,9 +175,10 @@
     (cond-> {}
       sources (assoc :path-specs
                      (mapv (fn [{:keys [path name ingest watch?] :as source}]
+                             (validate-single-segment-source source)
                              (let [parsed (parse-path-spec path)
                                    strategy (or ingest :whole-document)
-                                   metadata (dissoc source :path :name :ingest :watch?)]
+                                   metadata (dissoc source :path :name :ingest :watch? :embedding :content-strategy)]
                                (cond-> parsed
                                  (seq metadata) (assoc :base-metadata metadata)
                                  name (assoc-in [:base-metadata :name] name)

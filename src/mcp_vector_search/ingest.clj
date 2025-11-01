@@ -9,12 +9,18 @@
   ## Strategy Extensibility
   The `process-document` multimethod (defined in `ingest.common`) enables
   multiple ingestion strategies to coexist. This namespace requires strategy
-  namespaces (e.g., `ingest.chunked`) that extend the multimethod with their
-  implementations.
+  namespaces that extend the multimethod with their implementations:
+  - `ingest.single-segment` - Single-segment strategies with composable embedding/content
+  - `ingest.chunked` - Multi-segment chunked document processing
 
-  Built-in strategies include `:whole-document` (embeds and stores entire files),
-  `:namespace-doc` (embeds namespace docstrings but stores full source),
-  `:file-path` (stores only paths), and `:chunked` (splits documents into chunks).
+  Built-in single-segment strategies (via `ingest.single-segment`):
+  - `:whole-document` - Embeds and stores entire files
+  - `:namespace-doc` - Embeds namespace docstrings but stores full source
+  - `:file-path` - Embeds full content but stores only file paths
+  - `:single-segment` - Direct composition of :embedding and :content-strategy
+
+  Built-in multi-segment strategy:
+  - `:chunked` - Splits documents into chunks with configurable size/overlap
 
   To add a new strategy:
   1. Create namespace `mcp-vector-search.ingest.<strategy-name>`
@@ -30,7 +36,7 @@
     [mcp-clj.mcp-server.logging :as logging]
     [mcp-vector-search.ingest.chunked]
     [mcp-vector-search.ingest.common :as common]
-    [mcp-vector-search.parse :as parse])
+    [mcp-vector-search.ingest.single-segment])
   (:import
     (dev.langchain4j.data.document
       Metadata)
@@ -173,36 +179,6 @@
                      (update acc k (fnil conj #{}) v))
                    current
                    metadata))))
-
-;;; Strategy implementations
-
-(defmethod common/process-document :whole-document
-  [_strategy path content metadata]
-  (let [file-id path
-        segment-id (common/generate-segment-id file-id)]
-    [(common/create-segment-descriptor file-id segment-id content content metadata)]))
-
-(defmethod common/process-document :namespace-doc
-  [_strategy path content metadata]
-  (let [ns-form (parse/parse-first-ns-form content)]
-    (when-not ns-form
-      (throw (ex-info "No ns form found" {})))
-    (let [docstring (parse/extract-docstring ns-form)]
-      (when-not docstring
-        (throw (ex-info "No namespace docstring found" {})))
-      (let [namespace (parse/extract-namespace ns-form)]
-        (when-not namespace
-          (throw (ex-info "Could not extract namespace" {})))
-        (let [file-id path
-              segment-id (common/generate-segment-id file-id)
-              enhanced-metadata (assoc metadata :namespace namespace)]
-          [(common/create-segment-descriptor file-id segment-id docstring content enhanced-metadata)])))))
-
-(defmethod common/process-document :file-path
-  [_strategy path content metadata]
-  (let [file-id path
-        segment-id (common/generate-segment-id file-id)]
-    [(common/create-segment-descriptor file-id segment-id content path metadata)]))
 
 (defn- validate-segment
   "Validate that a segment descriptor has all required fields and valid values.

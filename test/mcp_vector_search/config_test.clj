@@ -170,4 +170,39 @@
                                :category "docs"}]}
             result (sut/process-config config)]
         (is (= {:category "docs"} (get-in result [:path-specs 0 :base-metadata])))
-        (is (nil? (get-in result [:path-specs 0 :base-metadata :ingest])))))))
+        (is (nil? (get-in result [:path-specs 0 :base-metadata :ingest])))))
+
+    (testing ":single-segment validation"
+      (testing "throws when :embedding is missing"
+        (let [config {:sources [{:path "/docs/*.md"
+                                 :ingest :single-segment
+                                 :content-strategy :whole-document}]}]
+          (is (thrown-with-msg? Exception #"Missing :embedding key"
+                                (sut/process-config config)))))
+
+      (testing "throws when :content-strategy is missing"
+        (let [config {:sources [{:path "/docs/*.md"
+                                 :ingest :single-segment
+                                 :embedding :whole-document}]}]
+          (is (thrown-with-msg? Exception #"Missing :content-strategy key"
+                                (sut/process-config config)))))
+
+      (testing "succeeds when both :embedding and :content-strategy are present"
+        (let [config {:sources [{:path "/docs/*.md"
+                                 :ingest :single-segment
+                                 :embedding :whole-document
+                                 :content-strategy :file-path}]}
+              result (sut/process-config config)]
+          (is (= :single-segment (get-in result [:path-specs 0 :ingest])))
+          (is (= 1 (count (:path-specs result))))))
+
+      (testing ":embedding and :content-strategy are not included in base-metadata"
+        (let [config {:sources [{:path "/docs/*.md"
+                                 :ingest :single-segment
+                                 :embedding :whole-document
+                                 :content-strategy :file-path
+                                 :category "docs"}]}
+              result (sut/process-config config)]
+          (is (= {:category "docs"} (get-in result [:path-specs 0 :base-metadata])))
+          (is (nil? (get-in result [:path-specs 0 :base-metadata :embedding])))
+          (is (nil? (get-in result [:path-specs 0 :base-metadata :content-strategy]))))))))

@@ -85,43 +85,69 @@ See `doc/path-spec.md` for formal path specification syntax and `doc/using.md` f
 
 ### Ingest Pipeline Strategies
 
-Configurable via the `process-document` multimethod to support different document processing approaches. Each strategy is implemented in its own namespace for modularity.
+Configurable via composable embedding and content strategies, orchestrated by the `process-document` multimethod. Single-segment strategies use a composable architecture, while multi-segment strategies (like `:chunked`) use direct implementations.
 
 **Namespace Organization**:
-- `ingest/common.clj` - Shared helpers and multimethod definition
-- `ingest/chunked.clj` - Chunked document processing strategy
+- `ingest/common.clj` - Shared helpers and `process-document` multimethod definition
+- `ingest/single_segment.clj` - Composable embedding and content strategies for single-segment processing
+- `ingest/chunked.clj` - Chunked document processing strategy (multi-segment)
 - Main `ingest.clj` requires all strategy namespaces
 
-**Built-in Strategies**:
-- `:whole-document` (default) - Embeds and stores entire file content
-- `:namespace-doc` - For Clojure files, embeds only namespace docstring but stores full source
-- `:file-path` - Embeds content but stores only file path (reduces memory usage)
-- `:chunked` - Splits large documents into chunks using LangChain4j recursive text splitter
+**Composable Architecture** (single-segment processing):
+
+The `:single-segment` strategy separates concerns:
+- **Embedding strategy** (`embed-content` multimethod) - What to search
+- **Content strategy** (`extract-content` multimethod) - What to store and return
+
+**Built-in Embedding Strategies**:
+- `:whole-document` - Embed full file content
+- `:namespace-doc` - Embed namespace docstring (Clojure files, adds `:namespace` metadata)
+
+**Built-in Content Strategies**:
+- `:whole-document` - Store full file content
+- `:file-path` - Store only file path (reduces memory usage)
+
+**Convenience Forwarding**:
+
+For ergonomic configuration, these `:ingest` values forward to `:single-segment` with predefined combinations:
+- `:whole-document` → embed full, store full
+- `:namespace-doc` → embed ns doc, store full
+- `:file-path` → embed full, store path only
+
+**Multi-Segment Strategy**:
+- `:chunked` - Splits large documents using LangChain4j recursive text splitter (separate namespace, not composable)
 
 **Configuration Examples**:
+
 ```clojure
-;; Search by namespace doc, return full source
+;; Convenience syntax (recommended)
 {:path "/src/**/*.clj"
  :ingest :namespace-doc}
 
-;; Search by content, return only paths
-{:path "/docs/**/*.md"
- :ingest :file-path}
+;; Composable syntax (custom combinations)
+{:path "/src/**/*.clj"
+ :ingest :single-segment
+ :embedding :namespace-doc
+ :content-strategy :file-path}
 ```
 
-To add new strategies, implement the `process-document` multimethod in a dedicated namespace:
+To add new single-segment strategies, implement the `embed-content` or `extract-content` multimethods in `ingest/single_segment.clj`:
 ```clojure
-(ns mcp-vector-search.ingest.my-strategy
-  (:require [mcp-vector-search.ingest.common :as common]))
+(ns mcp-vector-search.ingest.single-segment
+  ...)
 
-(defmethod common/process-document :my-strategy
+(defmethod embed-content :custom
   [_strategy path content metadata]
-  ;; Process document and return sequence of segment descriptor maps
-  ;; Each map must have: :file-id, :segment-id, :text-to-embed, :content-to-store, :metadata
+  ;; Return {:text "..." :metadata {...}} or just "text"
+  )
+
+(defmethod extract-content :custom
+  [_strategy path content metadata]
+  ;; Return string to store
   )
 ```
 
-See `ingest.clj` for `:whole-document`, `:namespace-doc`, and `:file-path` implementations, and `ingest/chunked.clj` for the `:chunked` implementation.
+For multi-segment strategies, implement `process-document` in a dedicated namespace like `ingest/chunked.clj`.
 
 ### Metadata System
 
@@ -234,22 +260,55 @@ Regex captures are extracted and merged with base-metadata to produce final file
 
 ## Common Development Tasks
 
-### Adding a New Processing Strategy
+### Adding a New Embedding or Content Strategy
+
+For single-segment processing, add methods to `src/mcp_vector_search/ingest/single_segment.clj`:
+
+**New Embedding Strategy:**
+```clojure
+(defmethod embed-content :my-embedding
+  [_strategy path content metadata]
+  ;; Return map with :text and optionally :metadata
+  {:text (extract-searchable-content content)
+   :metadata {:custom-field "value"}})
+```
+
+**New Content Strategy:**
+```clojure
+(defmethod extract-content :my-content
+  [_strategy path content metadata]
+  ;; Return string to store
+  (format-for-storage content))
+```
+
+Then use in configuration:
+```clojure
+{:sources [{:path "/data/**/*.txt"
+            :ingest :single-segment
+            :embedding :my-embedding
+            :content-strategy :my-content}]}
+```
+
+### Adding a New Multi-Segment Strategy
 
 1. Create a new namespace `src/mcp_vector_search/ingest/my_strategy.clj`:
 ```clojure
 (ns mcp-vector-search.ingest.my-strategy
   (:require [mcp-vector-search.ingest.common :as common]))
 
-(defmethod common/process-document :my-strategy
+(defmethod common/process-document :my-multi-segment
   [_strategy path content metadata]
   ;; Process content and create segment descriptors
-  (let [text-to-embed (extract-relevant-content content)
-        file-id path
-        segment-id (common/generate-segment-id file-id)]
-    ;; Return sequence of segment descriptor maps
-    [(common/create-segment-descriptor
-       file-id segment-id text-to-embed content metadata)]))
+  (let [segments (split-content content)]
+    (map-indexed
+      (fn [idx segment]
+        (common/create-segment-descriptor
+          path
+          (common/generate-segment-id path idx)
+          (:text segment)
+          (:content segment)
+          metadata))
+      segments)))
 ```
 
 2. Require the new namespace in `src/mcp_vector_search/ingest.clj`:
