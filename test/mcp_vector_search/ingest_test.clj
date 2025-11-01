@@ -823,6 +823,373 @@
                                          {}))))))
 
 
+(deftest error-tracking-test
+  ;; Test error tracking and statistics updates during ingestion
+  (testing "error tracking"
+
+    (testing "classifies and records read errors"
+      (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                    :embedding-store (InMemoryEmbeddingStore.)
+                    :ingestion-failures []}
+            nonexistent-file (io/file "nonexistent.txt")
+            file-maps [{:file nonexistent-file
+                        :path (.getPath nonexistent-file)
+                        :metadata {}
+                        :ingest :whole-document
+                        :source-path "/test/*"}]
+            system-atom (atom system)
+            result (sut/ingest-file system system-atom (first file-maps))]
+        (is (some? (:error result)))
+        (is (= :read-error (:error-type result)))
+        (is (= 1 (count (:ingestion-failures @system-atom))))
+        (let [error (first (:ingestion-failures @system-atom))]
+          (is (= (.getPath nonexistent-file) (:file-path error)))
+          (is (= :read-error (:error-type error)))
+          (is (= "/test/*" (:source-path error)))
+          (is (some? (:message error)))
+          (is (some? (:timestamp error))))))
+
+    (testing "classifies and records parse errors"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/parse-err")
+            test-file (io/file test-dir "bad.clj")]
+        (.mkdirs test-dir)
+        (spit test-file "(ns foo)")
+        (try
+          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :ingestion-failures []}
+                system-atom (atom system)
+                file-maps [{:file test-file
+                            :path (.getPath test-file)
+                            :metadata {}
+                            :ingest :namespace-doc
+                            :source-path "/src/**/*.clj"}]
+                result (sut/ingest-file system system-atom (first file-maps))]
+            (is (some? (:error result)))
+            (is (= :parse-error (:error-type result)))
+            (is (= 1 (count (:ingestion-failures @system-atom))))
+            (let [error (first (:ingestion-failures @system-atom))]
+              (is (= :parse-error (:error-type error)))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing "bounded queue drops oldest errors when full"
+      (let [system-atom (atom {:ingestion-failures []})
+            ;; Add 25 errors to exceed limit of 20
+            errors (map (fn [n]
+                          {:file-path (str "file" n)
+                           :error-type :read-error
+                           :message "error"
+                           :source-path "/test/*"
+                           :timestamp (java.time.Instant/now)})
+                        (range 25))]
+        (doseq [error errors]
+          (#'sut/add-error-to-queue system-atom error))
+        ;; Should only have last 20 errors
+        (is (= 20 (count (:ingestion-failures @system-atom))))
+        ;; First error should be file5 (dropped file0-file4)
+        (is (= "file5" (:file-path (first (:ingestion-failures @system-atom)))))
+        ;; Last error should be file24
+        (is (= "file24" (:file-path (last (:ingestion-failures @system-atom)))))))))
+
+(deftest statistics-tracking-test
+  ;; Test ingestion statistics tracking during file processing
+  (testing "statistics tracking"
+
+    (testing "tracks files-matched and files-processed"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/stats")
+            file1 (io/file test-dir "doc1.txt")
+            file2 (io/file test-dir "doc2.txt")]
+        (.mkdirs test-dir)
+        (spit file1 "content 1")
+        (spit file2 "content 2")
+        (try
+          (let [system-atom (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                                   :embedding-store (InMemoryEmbeddingStore.)
+                                   :metadata-values {}
+                                   :ingestion-failures []
+                                   :ingestion-stats {:sources [{:path "/test/**/*.txt"
+                                                                :files-matched 0
+                                                                :files-processed 0
+                                                                :segments-created 0
+                                                                :errors 0}]
+                                                     :total-documents 0
+                                                     :total-segments 0
+                                                     :total-errors 0
+                                                     :last-ingestion-at nil}})
+                file-maps [{:file file1
+                            :path (.getPath file1)
+                            :metadata {}
+                            :ingest :whole-document
+                            :source-path "/test/**/*.txt"}
+                           {:file file2
+                            :path (.getPath file2)
+                            :metadata {}
+                            :ingest :whole-document
+                            :source-path "/test/**/*.txt"}]
+                result (sut/ingest-files system-atom file-maps)]
+            (is (= 2 (:ingested result)))
+            (is (= 0 (:failed result)))
+            (let [stats (get-in @system-atom [:ingestion-stats])
+                  source-stats (first (:sources stats))]
+              (is (= 2 (:files-matched source-stats)))
+              (is (= 2 (:files-processed source-stats)))
+              (is (= 2 (:segments-created source-stats)))
+              (is (= 0 (:errors source-stats)))
+              (is (= 2 (:total-documents stats)))
+              (is (= 2 (:total-segments stats)))
+              (is (= 0 (:total-errors stats)))
+              (is (some? (:last-ingestion-at stats)))))
+          (finally
+            (.delete file1)
+            (.delete file2)
+            (.delete test-dir)))))
+
+    (testing "tracks errors in statistics"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/stats-err")
+            file1 (io/file test-dir "good.txt")
+            nonexistent (io/file test-dir "missing.txt")]
+        (.mkdirs test-dir)
+        (spit file1 "content")
+        (try
+          (let [system-atom (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                                   :embedding-store (InMemoryEmbeddingStore.)
+                                   :metadata-values {}
+                                   :ingestion-failures []
+                                   :ingestion-stats {:sources [{:path "/test/**/*.txt"
+                                                                :files-matched 0
+                                                                :files-processed 0
+                                                                :segments-created 0
+                                                                :errors 0}]
+                                                     :total-documents 0
+                                                     :total-segments 0
+                                                     :total-errors 0
+                                                     :last-ingestion-at nil}})
+                file-maps [{:file file1
+                            :path (.getPath file1)
+                            :metadata {}
+                            :ingest :whole-document
+                            :source-path "/test/**/*.txt"}
+                           {:file nonexistent
+                            :path (.getPath nonexistent)
+                            :metadata {}
+                            :ingest :whole-document
+                            :source-path "/test/**/*.txt"}]
+                result (sut/ingest-files system-atom file-maps)]
+            (is (= 1 (:ingested result)))
+            (is (= 1 (:failed result)))
+            (let [stats (get-in @system-atom [:ingestion-stats])
+                  source-stats (first (:sources stats))]
+              (is (= 2 (:files-matched source-stats)))
+              (is (= 1 (:files-processed source-stats)))
+              (is (= 1 (:segments-created source-stats)))
+              (is (= 1 (:errors source-stats)))
+              (is (= 1 (:total-documents stats)))
+              (is (= 1 (:total-segments stats)))
+              (is (= 1 (:total-errors stats)))))
+          (finally
+            (.delete file1)
+            (.delete test-dir)))))
+
+    (testing "tracks segment counts correctly"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/stats-seg")
+            file1 (io/file test-dir "doc.txt")]
+        (.mkdirs test-dir)
+        (spit file1 "content")
+        (try
+          ;; Use whole-document strategy which creates 1 segment
+          (let [system-atom (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                                   :embedding-store (InMemoryEmbeddingStore.)
+                                   :metadata-values {}
+                                   :ingestion-failures []
+                                   :ingestion-stats {:sources [{:path "/test/**/*.txt"
+                                                                :files-matched 0
+                                                                :files-processed 0
+                                                                :segments-created 0
+                                                                :errors 0}]
+                                                     :total-documents 0
+                                                     :total-segments 0
+                                                     :total-errors 0
+                                                     :last-ingestion-at nil}})
+                file-maps [{:file file1
+                            :path (.getPath file1)
+                            :metadata {}
+                            :ingest :whole-document
+                            :source-path "/test/**/*.txt"}]
+                result (sut/ingest-files system-atom file-maps)]
+            (is (= 1 (:ingested result)) (str "Ingestion failed with failures: " (pr-str (:failures result))))
+            (let [stats (get-in @system-atom [:ingestion-stats])
+                  source-stats (first (:sources stats))]
+              (is (= 1 (:files-matched source-stats)))
+              (is (= 1 (:files-processed source-stats)))
+              ;; Should have 1 segment
+              (is (= 1 (:segments-created source-stats)))
+              (is (= (:segments-created source-stats) (:total-segments stats)))))
+          (finally
+            (.delete file1)
+            (.delete test-dir)))))))
+
+(deftest path-captures-tracking-test
+  ;; Test tracking of captured metadata values per path spec
+  (testing "path captures tracking"
+
+    (testing "tracks single capture value per path spec"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/capture-track")
+            file1 (io/file test-dir "v1.md")]
+        (.mkdirs test-dir)
+        (spit file1 "content")
+        (try
+          (let [path-captures (atom {:path-specs []})
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :path-captures path-captures}
+                file-maps [{:file file1
+                            :path (.getPath file1)
+                            :metadata {:version "v1"}
+                            :captures {:version "v1"}
+                            :ingest :whole-document
+                            :source-path "/test/(?<version>v[0-9]+).md"}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 1 (:ingested result)))
+            (is (= 1 (count (:path-specs @path-captures))))
+            (let [spec (first (:path-specs @path-captures))]
+              (is (= "/test/(?<version>v[0-9]+).md" (:path spec)))
+              (is (= #{"v1"} (:version (:captures spec))))))
+          (finally
+            (.delete file1)
+            (.delete test-dir)))))
+
+    (testing "accumulates multiple capture values for same path spec"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/multi-capture")
+            file1 (io/file test-dir "v1.md")
+            file2 (io/file test-dir "v2.md")]
+        (.mkdirs test-dir)
+        (spit file1 "content1")
+        (spit file2 "content2")
+        (try
+          (let [path-captures (atom {:path-specs []})
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :path-captures path-captures}
+                file-maps [{:file file1
+                            :path (.getPath file1)
+                            :metadata {:version "v1"}
+                            :captures {:version "v1"}
+                            :ingest :whole-document
+                            :source-path "/test/(?<version>v[0-9]+).md"}
+                           {:file file2
+                            :path (.getPath file2)
+                            :metadata {:version "v2"}
+                            :captures {:version "v2"}
+                            :ingest :whole-document
+                            :source-path "/test/(?<version>v[0-9]+).md"}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 2 (:ingested result)))
+            (is (= 1 (count (:path-specs @path-captures))))
+            (let [spec (first (:path-specs @path-captures))]
+              (is (= "/test/(?<version>v[0-9]+).md" (:path spec)))
+              (is (= #{"v1" "v2"} (:version (:captures spec))))))
+          (finally
+            (.delete file1)
+            (.delete file2)
+            (.delete test-dir)))))
+
+    (testing "tracks multiple capture fields per path spec"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/multi-field")
+            subdir (io/file test-dir "clj")
+            file1 (io/file subdir "v1-guide.md")]
+        (.mkdirs subdir)
+        (spit file1 "content")
+        (try
+          (let [path-captures (atom {:path-specs []})
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :path-captures path-captures}
+                file-maps [{:file file1
+                            :path (.getPath file1)
+                            :metadata {:lang "clj" :ver "v1" :topic "guide"}
+                            :captures {:lang "clj" :ver "v1" :topic "guide"}
+                            :ingest :whole-document
+                            :source-path "/test/(?<lang>[^/]+)/(?<ver>v[0-9]+)-(?<topic>[^.]+).md"}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 1 (:ingested result)))
+            (is (= 1 (count (:path-specs @path-captures))))
+            (let [spec (first (:path-specs @path-captures))]
+              (is (= "/test/(?<lang>[^/]+)/(?<ver>v[0-9]+)-(?<topic>[^.]+).md" (:path spec)))
+              (is (= #{"clj"} (:lang (:captures spec))))
+              (is (= #{"v1"} (:ver (:captures spec))))
+              (is (= #{"guide"} (:topic (:captures spec))))))
+          (finally
+            (.delete file1)
+            (.delete subdir)
+            (.delete test-dir)))))
+
+    (testing "handles different path specs independently"
+      (let [test-dir1 (io/file "test/mcp_vector_search/test-resources/ingest_test/spec1")
+            test-dir2 (io/file "test/mcp_vector_search/test-resources/ingest_test/spec2")
+            file1 (io/file test-dir1 "v1.md")
+            file2 (io/file test-dir2 "api.md")]
+        (.mkdirs test-dir1)
+        (.mkdirs test-dir2)
+        (spit file1 "content1")
+        (spit file2 "content2")
+        (try
+          (let [path-captures (atom {:path-specs []})
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :path-captures path-captures}
+                file-maps [{:file file1
+                            :path (.getPath file1)
+                            :metadata {:version "v1"}
+                            :captures {:version "v1"}
+                            :ingest :whole-document
+                            :source-path "/test1/(?<version>v[0-9]+).md"}
+                           {:file file2
+                            :path (.getPath file2)
+                            :metadata {:category "api"}
+                            :captures {:category "api"}
+                            :ingest :whole-document
+                            :source-path "/test2/(?<category>[^.]+).md"}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 2 (:ingested result)))
+            (is (= 2 (count (:path-specs @path-captures))))
+            (let [spec1 (first (filter #(= "/test1/(?<version>v[0-9]+).md" (:path %)) (:path-specs @path-captures)))
+                  spec2 (first (filter #(= "/test2/(?<category>[^.]+).md" (:path %)) (:path-specs @path-captures)))]
+              (is (some? spec1))
+              (is (some? spec2))
+              (is (= #{"v1"} (:version (:captures spec1))))
+              (is (= #{"api"} (:category (:captures spec2))))))
+          (finally
+            (.delete file1)
+            (.delete file2)
+            (.delete test-dir1)
+            (.delete test-dir2)))))
+
+    (testing "skips tracking when no captures present"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/no-capture")
+            file1 (io/file test-dir "doc.txt")]
+        (.mkdirs test-dir)
+        (spit file1 "content")
+        (try
+          (let [path-captures (atom {:path-specs []})
+                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)
+                        :path-captures path-captures}
+                file-maps [{:file file1
+                            :path (.getPath file1)
+                            :metadata {}
+                            :captures {}
+                            :ingest :whole-document
+                            :source-path "/test/*.txt"}]
+                result (sut/ingest-files system file-maps)]
+            (is (= 1 (:ingested result)))
+            ;; No path specs should be added since there are no captures
+            (is (= 0 (count (:path-specs @path-captures)))))
+          (finally
+            (.delete file1)
+            (.delete test-dir)))))))
+
 (deftest multi-segment-ingestion-test
   ;; Test that ingest-file handles multiple segments correctly
   (testing "multi-segment ingestion"
@@ -941,3 +1308,134 @@
           (finally
             (.delete test-file)
             (.delete test-dir)))))))
+
+(deftest update-stats-map-test
+  ;; Test pure function that updates ingestion statistics
+  (testing "update-stats-map"
+
+    (testing "updates matching source statistics"
+      (let [current-stats {:sources [{:path "/test/**/*.txt"
+                                      :files-matched 0
+                                      :files-processed 0
+                                      :segments-created 0
+                                      :errors 0}]
+                           :total-documents 0
+                           :total-segments 0
+                           :total-errors 0
+                           :last-ingestion-at nil}
+            stats-update {:files-matched 2
+                         :files-processed 1
+                         :segments-created 3
+                         :errors 1}
+            timestamp (java.time.Instant/parse "2025-01-15T10:30:00Z")
+            result (#'sut/update-stats-map current-stats "/test/**/*.txt" stats-update timestamp)]
+        (is (= 2 (get-in result [:sources 0 :files-matched])))
+        (is (= 1 (get-in result [:sources 0 :files-processed])))
+        (is (= 3 (get-in result [:sources 0 :segments-created])))
+        (is (= 1 (get-in result [:sources 0 :errors])))
+        (is (= timestamp (:last-ingestion-at result)))))
+
+    (testing "accumulates stats for repeated updates to same source"
+      (let [initial-stats {:sources [{:path "/src/**/*.clj"
+                                      :files-matched 5
+                                      :files-processed 5
+                                      :segments-created 10
+                                      :errors 0}]
+                           :total-documents 5
+                           :total-segments 10
+                           :total-errors 0
+                           :last-ingestion-at nil}
+            stats-update {:files-matched 3
+                         :files-processed 2
+                         :segments-created 4
+                         :errors 1}
+            timestamp (java.time.Instant/now)
+            result (#'sut/update-stats-map initial-stats "/src/**/*.clj" stats-update timestamp)]
+        (is (= 8 (get-in result [:sources 0 :files-matched])))
+        (is (= 7 (get-in result [:sources 0 :files-processed])))
+        (is (= 14 (get-in result [:sources 0 :segments-created])))
+        (is (= 1 (get-in result [:sources 0 :errors])))))
+
+    (testing "updates total statistics"
+      (let [current-stats {:sources [{:path "/test/*"}]
+                           :total-documents 10
+                           :total-segments 15
+                           :total-errors 2
+                           :last-ingestion-at nil}
+            stats-update {:files-processed 5
+                         :segments-created 8
+                         :errors 1}
+            timestamp (java.time.Instant/now)
+            result (#'sut/update-stats-map current-stats "/test/*" stats-update timestamp)]
+        (is (= 15 (:total-documents result)))
+        (is (= 23 (:total-segments result)))
+        (is (= 3 (:total-errors result)))))
+
+    (testing "only updates matching source, leaves others unchanged"
+      (let [current-stats {:sources [{:path "/src/**/*.clj"
+                                      :files-matched 5
+                                      :files-processed 5
+                                      :segments-created 10
+                                      :errors 0}
+                                     {:path "/test/**/*.clj"
+                                      :files-matched 3
+                                      :files-processed 3
+                                      :segments-created 6
+                                      :errors 0}]
+                           :total-documents 8
+                           :total-segments 16
+                           :total-errors 0
+                           :last-ingestion-at nil}
+            stats-update {:files-matched 2
+                         :files-processed 2
+                         :segments-created 4
+                         :errors 0}
+            timestamp (java.time.Instant/now)
+            result (#'sut/update-stats-map current-stats "/src/**/*.clj" stats-update timestamp)]
+        (is (= 7 (get-in result [:sources 0 :files-matched])))
+        (is (= 7 (get-in result [:sources 0 :files-processed])))
+        (is (= 14 (get-in result [:sources 0 :segments-created])))
+        (is (= 3 (get-in result [:sources 1 :files-matched])))
+        (is (= 3 (get-in result [:sources 1 :files-processed])))
+        (is (= 6 (get-in result [:sources 1 :segments-created])))))
+
+    (testing "handles missing keys in stats-update with zero"
+      (let [current-stats {:sources [{:path "/docs/**/*.md"
+                                      :files-matched 0
+                                      :files-processed 0
+                                      :segments-created 0
+                                      :errors 0}]
+                           :total-documents 0
+                           :total-segments 0
+                           :total-errors 0
+                           :last-ingestion-at nil}
+            stats-update {:files-processed 1}
+            timestamp (java.time.Instant/now)
+            result (#'sut/update-stats-map current-stats "/docs/**/*.md" stats-update timestamp)]
+        (is (= 1 (:total-documents result)))
+        (is (= 0 (:total-segments result)))
+        (is (= 0 (:total-errors result)))))
+
+    (testing "updates timestamp"
+      (let [old-timestamp (java.time.Instant/parse "2025-01-01T00:00:00Z")
+            new-timestamp (java.time.Instant/parse "2025-01-15T12:00:00Z")
+            current-stats {:sources [{:path "/test/*"}]
+                           :total-documents 0
+                           :total-segments 0
+                           :total-errors 0
+                           :last-ingestion-at old-timestamp}
+            stats-update {:files-processed 1}
+            result (#'sut/update-stats-map current-stats "/test/*" stats-update new-timestamp)]
+        (is (= new-timestamp (:last-ingestion-at result)))
+        (is (not= old-timestamp (:last-ingestion-at result)))))
+
+    (testing "is pure - does not modify input"
+      (let [current-stats {:sources [{:path "/test/*"
+                                      :files-matched 0}]
+                           :total-documents 0}
+            original-sources (:sources current-stats)
+            stats-update {:files-matched 5}
+            timestamp (java.time.Instant/now)
+            _result (#'sut/update-stats-map current-stats "/test/*" stats-update timestamp)]
+        (is (= 0 (get-in current-stats [:sources 0 :files-matched])))
+        (is (= original-sources (:sources current-stats)))))))

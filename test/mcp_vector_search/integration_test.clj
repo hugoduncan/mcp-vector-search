@@ -5,6 +5,8 @@
     [clojure.test :refer [deftest testing is]]
     [mcp-vector-search.config :as config]
     [mcp-vector-search.ingest :as ingest]
+    [mcp-vector-search.lifecycle :as lifecycle]
+    [mcp-vector-search.resources :as resources]
     [mcp-vector-search.tools :as tools])
   (:import
     (dev.langchain4j.model.embedding.onnx.allminilml6v2
@@ -187,4 +189,122 @@
                   (is (= 1 (count v2-results)))
                   (is (re-find #"v2|API" (get (first v2-results) "content")))))))
           (finally
+            (fs/delete-tree temp-dir)))))))
+
+(deftest resource-integration-test
+  ;; Test MCP resource discoverability and readability
+  (testing "MCP resources"
+
+    (testing "resources are discoverable via resource-definitions"
+      (let [system (lifecycle/start)
+            resource-defs (resources/resource-definitions lifecycle/system)]
+
+        ;; Verify all 5 resources are present
+        (is (= 5 (count resource-defs)))
+
+        ;; Verify resource names
+        (is (contains? resource-defs "ingestion-status"))
+        (is (contains? resource-defs "ingestion-stats"))
+        (is (contains? resource-defs "ingestion-failures"))
+        (is (contains? resource-defs "path-metadata"))
+        (is (contains? resource-defs "watch-stats"))
+
+        ;; Verify each resource has required fields
+        (doseq [[_name resource-def] resource-defs]
+          (is (contains? resource-def :name))
+          (is (contains? resource-def :uri))
+          (is (contains? resource-def :mime-type))
+          (is (contains? resource-def :description))
+          (is (contains? resource-def :implementation))
+          (is (= "application/json" (:mime-type resource-def))))))
+
+    (testing "resources are readable and return valid JSON"
+      (let [temp-dir (fs/create-temp-dir)]
+        (try
+          (let [;; Create test files
+                doc1-path (fs/file temp-dir "test.md")
+                _ (spit doc1-path "Test content")
+
+                user-config {:sources [{:name "test-docs"
+                                        :path (str (fs/file temp-dir "*.md"))}]}
+
+                processed-config (config/process-config user-config)
+                _system (lifecycle/start)
+                _ (ingest/ingest lifecycle/system processed-config)
+
+                resource-defs (resources/resource-definitions lifecycle/system)]
+
+            ;; Test ingestion-status resource
+            (let [status-impl (get-in resource-defs ["ingestion-status" :implementation])
+                  status-result (status-impl nil "ingestion://status")]
+
+              (is (false? (:isError status-result)))
+              (is (vector? (:contents status-result)))
+              (is (= 1 (count (:contents status-result))))
+
+              (let [content (first (:contents status-result))
+                    data (json/read-str (:text content))]
+
+                (is (= "ingestion://status" (:uri content)))
+                (is (= "application/json" (:mimeType content)))
+                (is (contains? data "total-documents"))
+                (is (contains? data "total-segments"))
+                (is (contains? data "total-errors"))
+                (is (= 1 (get data "total-documents")))))
+
+            ;; Test ingestion-stats resource
+            (let [stats-impl (get-in resource-defs ["ingestion-stats" :implementation])
+                  stats-result (stats-impl nil "ingestion://stats")]
+
+              (is (false? (:isError stats-result)))
+
+              (let [content (first (:contents stats-result))
+                    data (json/read-str (:text content))]
+
+                (is (= "ingestion://stats" (:uri content)))
+                (is (contains? data "sources"))
+                (is (vector? (get data "sources")))))
+
+            ;; Test ingestion-failures resource
+            (let [failures-impl (get-in resource-defs ["ingestion-failures" :implementation])
+                  failures-result (failures-impl nil "ingestion://failures")]
+
+              (is (false? (:isError failures-result)))
+
+              (let [content (first (:contents failures-result))
+                    data (json/read-str (:text content))]
+
+                (is (= "ingestion://failures" (:uri content)))
+                (is (contains? data "failures"))
+                (is (vector? (get data "failures")))))
+
+            ;; Test path-metadata resource
+            (let [metadata-impl (get-in resource-defs ["path-metadata" :implementation])
+                  metadata-result (metadata-impl nil "ingestion://metadata")]
+
+              (is (false? (:isError metadata-result)))
+
+              (let [content (first (:contents metadata-result))
+                    data (json/read-str (:text content))]
+
+                (is (= "ingestion://metadata" (:uri content)))
+                (is (contains? data "path-specs"))
+                (is (vector? (get data "path-specs")))))
+
+            ;; Test watch-stats resource
+            (let [watch-impl (get-in resource-defs ["watch-stats" :implementation])
+                  watch-result (watch-impl nil "ingestion://watch-stats")]
+
+              (is (false? (:isError watch-result)))
+
+              (let [content (first (:contents watch-result))
+                    data (json/read-str (:text content))]
+
+                (is (= "ingestion://watch-stats" (:uri content)))
+                (is (contains? data "enabled"))
+                (is (contains? data "sources"))
+                (is (contains? data "events"))
+                (is (contains? data "debounce")))))
+          (finally
+            (lifecycle/stop)
             (fs/delete-tree temp-dir)))))))

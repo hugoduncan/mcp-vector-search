@@ -38,8 +38,23 @@
     (reset! system
             {:embedding-model (create-embedding-model)
              :embedding-store (InMemoryEmbeddingStore.)
-             :metadata-values (atom {})
-             :watches nil}))
+             :metadata-values {}
+             :watches nil
+             :ingestion-stats {:sources []
+                               :total-documents 0
+                               :total-segments 0
+                               :total-errors 0
+                               :last-ingestion-at nil}
+             :ingestion-failures []
+             :watch-stats {:enabled? false
+                           :sources []
+                           :events {:created 0
+                                    :modified 0
+                                    :deleted 0
+                                    :last-event-at nil}
+                           :debounce {:queued 0
+                                      :processed 0}}
+             :path-captures {:path-specs []}}))
   @system)
 
 (defn set-server
@@ -57,7 +72,7 @@
   Returns the updated system map."
   [config]
   (when @system
-    (let [watchers (watch/start-watches @system config)]
+    (let [watchers (watch/start-watches system config)]
       (swap! system assoc :watches watchers)))
   @system)
 

@@ -156,13 +156,13 @@
   [_strategy _path content _metadata]
   (let [ns-form (parse/parse-first-ns-form content)]
     (when-not ns-form
-      (throw (ex-info "No ns form found" {})))
+      (throw (ex-info "No ns form found" {:type :parse-error})))
     (let [docstring (parse/extract-docstring ns-form)]
       (when-not docstring
-        (throw (ex-info "No namespace docstring found" {})))
+        (throw (ex-info "No namespace docstring found" {:type :parse-error})))
       (let [namespace (parse/extract-namespace ns-form)]
         (when-not namespace
-          (throw (ex-info "Could not extract namespace" {})))
+          (throw (ex-info "Could not extract namespace" {:type :parse-error})))
         {:text docstring
          :metadata {:namespace namespace}}))))
 

@@ -273,3 +273,127 @@
         (finally
           (fs/delete-tree temp-dir))))))
 
+(deftest watch-statistics-test
+  ;; Test that watch statistics are properly tracked during watch operations
+
+  (testing "start-watches initializes watch statistics"
+    (let [temp-dir (fs/create-temp-dir)
+          watch-stats (atom {:enabled? false
+                             :sources []
+                             :events {:created 0
+                                      :modified 0
+                                      :deleted 0
+                                      :last-event-at nil}
+                             :debounce {:queued 0
+                                        :processed 0}})
+          system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                  :embedding-store (InMemoryEmbeddingStore.)
+                  :metadata-values (atom {})
+                  :watch-stats watch-stats}
+          config {:watch? true
+                  :sources [{:path (str (fs/file temp-dir "*.md"))}]}
+          parsed-config (config/process-config config)]
+
+      (try
+        (let [watchers (watch/start-watches system parsed-config)]
+          (try
+            ;; Verify watch-stats was updated
+            (is (true? (:enabled? @watch-stats)))
+            (is (= 1 (count (:sources @watch-stats))))
+            (is (true? (-> @watch-stats :sources first :watching?)))
+
+            (finally
+              (watch/stop-watches watchers))))
+
+        (finally
+          (fs/delete-tree temp-dir)))))
+
+  (testing "debounce-event tracks queued events and timestamp"
+    (let [watch-stats (atom {:enabled? true
+                             :sources []
+                             :events {:created 0
+                                      :modified 0
+                                      :deleted 0
+                                      :last-event-at nil}
+                             :debounce {:queued 0
+                                        :processed 0}})
+          system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                  :embedding-store (InMemoryEmbeddingStore.)
+                  :metadata-values (atom {})
+                  :watch-stats watch-stats}
+          path-spec {:segments [{:type :literal :value "/test/"}
+                                {:type :glob :pattern "*"}
+                                {:type :literal :value ".md"}]
+                     :base-metadata {}
+                     :ingest :whole-document}]
+
+      ;; Call debounce-event directly
+      (#'watch/debounce-event system "/test/file.md" {:kind :create} path-spec)
+
+      ;; Verify statistics were updated
+      (is (= 1 (get-in @watch-stats [:debounce :queued])))
+      (is (some? (get-in @watch-stats [:events :last-event-at])))))
+
+  (testing "process-pending-events tracks event types and processed count"
+    (let [temp-dir (fs/create-temp-dir)
+          test-file (fs/file temp-dir "test.md")
+          _ (spit test-file "Test content")
+          watch-stats (atom {:enabled? true
+                             :sources []
+                             :events {:created 0
+                                      :modified 0
+                                      :deleted 0
+                                      :last-event-at nil}
+                             :debounce {:queued 0
+                                        :processed 0}})
+          system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                  :embedding-store (InMemoryEmbeddingStore.)
+                  :metadata-values (atom {})
+                  :watch-stats watch-stats}
+          path-str (str test-file)
+          path-spec {:segments (let [parsed (config/parse-path-spec path-str)]
+                                 (:segments parsed))
+                     :base-metadata {}
+                     :ingest :whole-document}]
+
+      (try
+        ;; Simulate create event
+        (reset! watch/debounce-state
+                {path-str {:event {:kind :create :file test-file}
+                           :path-spec path-spec}})
+        (#'watch/process-pending-events system)
+
+        ;; Verify create event was tracked
+        (is (= 1 (get-in @watch-stats [:events :created])))
+        (is (= 0 (get-in @watch-stats [:events :modified])))
+        (is (= 0 (get-in @watch-stats [:events :deleted])))
+        (is (= 1 (get-in @watch-stats [:debounce :processed])))
+
+        ;; Simulate modify event
+        (spit test-file "Modified content")
+        (reset! watch/debounce-state
+                {path-str {:event {:kind :modify :file test-file}
+                           :path-spec path-spec}})
+        (#'watch/process-pending-events system)
+
+        ;; Verify modify event was tracked
+        (is (= 1 (get-in @watch-stats [:events :created])))
+        (is (= 1 (get-in @watch-stats [:events :modified])))
+        (is (= 0 (get-in @watch-stats [:events :deleted])))
+        (is (= 2 (get-in @watch-stats [:debounce :processed])))
+
+        ;; Simulate delete event
+        (reset! watch/debounce-state
+                {path-str {:event {:kind :delete :file test-file}
+                           :path-spec path-spec}})
+        (#'watch/process-pending-events system)
+
+        ;; Verify delete event was tracked
+        (is (= 1 (get-in @watch-stats [:events :created])))
+        (is (= 1 (get-in @watch-stats [:events :modified])))
+        (is (= 1 (get-in @watch-stats [:events :deleted])))
+        (is (= 3 (get-in @watch-stats [:debounce :processed])))
+
+        (finally
+          (fs/delete-tree temp-dir))))))
+

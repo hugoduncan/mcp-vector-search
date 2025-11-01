@@ -20,7 +20,8 @@
     [hawk.core :as hawk]
     [mcp-clj.mcp-server.logging :as logging]
     [mcp-vector-search.config :as config]
-    [mcp-vector-search.ingest :as ingest])
+    [mcp-vector-search.ingest :as ingest]
+    [mcp-vector-search.util :as util])
   (:import
     (dev.langchain4j.data.segment
       TextSegment)
@@ -33,6 +34,8 @@
       IsEqualTo)
     (java.io
       File)
+    (java.time
+      Instant)
     (java.util
       Timer)
     (java.util.regex
@@ -115,7 +118,8 @@
 (defn- process-pending-events
   "Process all pending debounced events."
   [system]
-  (let [[old-state _new-state] (swap-vals! debounce-state (constantly {}))
+  (let [system-map (if (instance? clojure.lang.Atom system) @system system)
+        [old-state _new-state] (swap-vals! debounce-state (constantly {}))
         events-to-process
         (reduce-kv
           (fn [acc path {:keys [event path-spec]}]
@@ -126,7 +130,7 @@
     ;; Process each event
     (doseq [{:keys [path event path-spec]} events-to-process]
       (try
-        (log-if-server system :info {:event event :path path})
+        (log-if-server system-map :info {:event event :path path})
         (let [kind (:kind event)]
           (cond
             (#{:create :modify} kind)
@@ -146,46 +150,75 @@
 
                   (when (= kind :modify)
                     (log-if-server
-                      system
+                      system-map
                       :info
                       {:event "file-modified" :path path})
                     ;; Remove all segments with this file-id before re-adding
-                    (let [embedding-store (:embedding-store system)
-                          embedding-model (:embedding-model system)
+                    (let [embedding-store (:embedding-store system-map)
+                          embedding-model (:embedding-model system-map)
                           removed-count (remove-by-file-id embedding-store embedding-model path)]
                       (log-if-server
-                        system
+                        system-map
                         :info
                         {:event "segments-removed" :file-id path :count removed-count})))
                   (when (= kind :create)
                     (log-if-server
-                      system
+                      system-map
                       :info
                       {:event "file-created" :path path}))
-                  (let [result (ingest/ingest-file system file-map)]
+                  (let [system-atom (when (instance? clojure.lang.Atom system) system)
+                        result (ingest/ingest-file system-map system-atom file-map)]
                     (when (:error result)
-                      (log-if-server system :error {:event "ingest-failed"
-                                                    :path path
-                                                    :error (:error result)}))))
+                      (log-if-server system-map :error {:event "ingest-failed"
+                                                        :path path
+                                                        :error (:error result)}))))
                 ;; Pattern didn't match - this shouldn't happen if filter is correct
-                (log-if-server system :warn {:event "file-not-matched"
-                                             :path path
-                                             :pattern (str pattern)})))
+                (log-if-server system-map :warn {:event "file-not-matched"
+                                                 :path path
+                                                 :pattern (str pattern)})))
 
             (= kind :delete)
             (do
-              (log-if-server system :info {:event "file-deleted" :path path})
-              (let [embedding-store (:embedding-store system)
-                    embedding-model (:embedding-model system)
+              (log-if-server system-map :info {:event "file-deleted" :path path})
+              (let [embedding-store (:embedding-store system-map)
+                    embedding-model (:embedding-model system-map)
                     removed-count (remove-by-file-id embedding-store embedding-model path)]
                 (log-if-server
-                  system
+                  system-map
                   :info
-                  {:event "segments-removed" :file-id path :count removed-count})))))
+                  {:event "segments-removed" :file-id path :count removed-count}))))
+          ;; Update watch statistics for processed events
+          (let [system-map (if (instance? clojure.lang.Atom system) @system system)
+                watch-stats-value (:watch-stats system-map)]
+            (cond
+              ;; New pattern: system is atom, watch-stats is plain value
+              (instance? clojure.lang.Atom system)
+              (swap! system
+                     (fn [current]
+                       (update current :watch-stats
+                               (fn [stats]
+                                 (-> stats
+                                     (update-in [:debounce :processed] inc)
+                                     (update-in [:events (case kind
+                                                           :create :created
+                                                           :modify :modified
+                                                           :delete :deleted)]
+                                                inc))))))
+              ;; Old pattern: system is map, watch-stats is atom
+              (instance? clojure.lang.Atom watch-stats-value)
+              (swap! watch-stats-value
+                     (fn [stats]
+                       (-> stats
+                           (update-in [:debounce :processed] inc)
+                           (update-in [:events (case kind
+                                                 :create :created
+                                                 :modify :modified
+                                                 :delete :deleted)]
+                                      inc)))))))
         (catch Exception e
-          (log-if-server system :error {:event "watch-error"
-                                        :path path
-                                        :error (.getMessage e)})
+          (log-if-server system-map :error {:event "watch-error"
+                                            :path path
+                                            :error (.getMessage e)})
           (.printStackTrace e))))))
 
 (defn- schedule-debounce-flush
@@ -216,6 +249,26 @@
          path
          {:event event
           :path-spec path-spec})
+  ;; Update watch statistics
+  (let [system-map (if (instance? clojure.lang.Atom system) @system system)
+        watch-stats-value (:watch-stats system-map)]
+    (cond
+      ;; New pattern: system is atom, watch-stats is plain value
+      (instance? clojure.lang.Atom system)
+      (swap! system
+             (fn [current]
+               (update current :watch-stats
+                       (fn [stats]
+                         (-> stats
+                             (update-in [:debounce :queued] inc)
+                             (assoc-in [:events :last-event-at] (Instant/now)))))))
+      ;; Old pattern: system is map, watch-stats is atom
+      (instance? clojure.lang.Atom watch-stats-value)
+      (swap! watch-stats-value
+             (fn [stats]
+               (-> stats
+                   (update-in [:debounce :queued] inc)
+                   (assoc-in [:events :last-event-at] (Instant/now)))))))
   (schedule-debounce-flush system))
 
 ;; Watch setup
@@ -235,14 +288,6 @@
         matcher (re-matcher pattern path)]
     (.matches matcher)))
 
-(defn- normalize-path
-  "Normalize a path by resolving symlinks to get canonical path."
-  [path]
-  (try
-    (.getCanonicalPath (io/file path))
-    (catch Exception _
-      path)))
-
 (defn- setup-watch
   "Setup a watch for a single path-spec.
   Returns a hawk watcher handle."
@@ -254,7 +299,7 @@
                         base-path
                         (.getCanonicalPath base-file-for-absolute))
         ;; Normalize to handle symlinks (e.g., /var -> /private/var on macOS)
-        normalized-base (normalize-path absolute-base)
+        normalized-base (util/normalize-file-path absolute-base)
         base-file (io/file normalized-base)
         watch-path (if (.isFile base-file)
                      (.getParent base-file)
@@ -265,18 +310,18 @@
         ;; Preserve trailing separator if present
         has-trailing-sep? (str/ends-with? original-relative-base "/")
         normalized-base-with-sep (if (and has-trailing-sep?
-                                         (not (str/ends-with? normalized-base "/")))
+                                          (not (str/ends-with? normalized-base "/")))
                                    (str normalized-base "/")
                                    normalized-base)
         ;; Build the full pattern string from segments
         relative-pattern-str (str/join (mapv (fn [{:keys [type] :as segment}]
-                                                (case type
-                                                  :literal (:value segment)
-                                                  :glob (case (:pattern segment)
-                                                          "**" "**"
-                                                          "*" "*")
-                                                  :capture (str "(?<" (:name segment) ">" (:pattern segment) ")")))
-                                              segments))
+                                               (case type
+                                                 :literal (:value segment)
+                                                 :glob (case (:pattern segment)
+                                                         "**" "**"
+                                                         "*" "*")
+                                                 :capture (str "(?<" (:name segment) ">" (:pattern segment) ")")))
+                                             segments))
         ;; Replace the relative base with the absolute normalized base
         normalized-pattern (str/replace-first
                              relative-pattern-str
@@ -288,32 +333,33 @@
         normalized-path-spec (assoc path-spec :segments normalized-segments)
         recursive? (should-watch-recursively? normalized-segments normalized-base)]
 
-    (try
-      (log-if-server system :info {:event "watch-started"
-                                   :path watch-path
-                                   :recursive recursive?})
-      (hawk/watch!
-        [{:paths [watch-path]
-          :filter (fn [ctx {:keys [file] :as event}]
-                    (let [is-file? (hawk/file? ctx event)
-                          file-path (normalize-path (.getPath ^File file))
-                          matches? (matches-path-spec? file-path normalized-segments)
-                          should-process? (and is-file? matches?)]
-                      (when (and is-file? (not matches?))
-                        (log-if-server system :info {:event "file-filtered-out"
-                                                     :path file-path
-                                                     :watch-path watch-path}))
-                      should-process?))
-          :handler (fn [ctx event]
-                     (debounce-event system (normalize-path (.getPath ^File (:file event))) event normalized-path-spec)
-                     ctx)}])
-      (catch Exception e
-        (log-if-server system :error {:event "watch-setup-failed"
-                                      :path normalized-base
-                                      :error (.getMessage e)})
-        (binding [*out* *err*]
-          (println "Failed to setup watch for" base-path ":" (.getMessage e)))
-        nil))))
+    (let [system-map (if (instance? clojure.lang.Atom system) @system system)]
+      (try
+        (log-if-server system-map :info {:event "watch-started"
+                                         :path watch-path
+                                         :recursive recursive?})
+        (hawk/watch!
+          [{:paths [watch-path]
+            :filter (fn [ctx {:keys [file] :as event}]
+                      (let [is-file? (hawk/file? ctx event)
+                            file-path (util/normalize-file-path (.getPath ^File file))
+                            matches? (matches-path-spec? file-path normalized-segments)
+                            should-process? (and is-file? matches?)]
+                        (when (and is-file? (not matches?))
+                          (log-if-server system-map :info {:event "file-filtered-out"
+                                                           :path file-path
+                                                           :watch-path watch-path}))
+                        should-process?))
+            :handler (fn [ctx event]
+                       (debounce-event system (util/normalize-file-path (.getPath ^File (:file event))) event normalized-path-spec)
+                       ctx)}])
+        (catch Exception e
+          (log-if-server system-map :error {:event "watch-setup-failed"
+                                            :path normalized-base
+                                            :error (.getMessage e)})
+          (binding [*out* *err*]
+            (println "Failed to setup watch for" base-path ":" (.getMessage e)))
+          nil)))))
 
 (defn start-watches
   "Start file watching for all path-specs with :watch? enabled.
@@ -323,6 +369,36 @@
   (let [global-watch? (boolean watch?)
         watched-specs (filter #(get % :watch? global-watch?) path-specs)]
     (when (seq watched-specs)
+      ;; Update watch statistics
+      (let [system-map (if (instance? clojure.lang.Atom system) @system system)
+            watch-stats-value (:watch-stats system-map)]
+        (cond
+          ;; New pattern: system is atom, watch-stats is plain value
+          (instance? clojure.lang.Atom system)
+          (swap! system
+                 (fn [current]
+                   (update current :watch-stats
+                           (fn [stats]
+                             (-> stats
+                                 (assoc :enabled? true)
+                                 (assoc :sources
+                                        (mapv (fn [spec]
+                                                {:path (str/join (map :value (filter #(= :literal (:type %))
+                                                                                     (:segments spec))))
+                                                 :watching? true})
+                                              watched-specs)))))))
+          ;; Old pattern: system is map, watch-stats is atom
+          (instance? clojure.lang.Atom watch-stats-value)
+          (swap! watch-stats-value
+                 (fn [stats]
+                   (-> stats
+                       (assoc :enabled? true)
+                       (assoc :sources
+                              (mapv (fn [spec]
+                                      {:path (str/join (map :value (filter #(= :literal (:type %))
+                                                                           (:segments spec))))
+                                       :watching? true})
+                                    watched-specs)))))))
       (into [] (keep #(setup-watch system %)) watched-specs))))
 
 (defn stop-watches

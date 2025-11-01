@@ -29,9 +29,29 @@
           (is (contains? result :embedding-model))
           (is (contains? result :embedding-store))
           (is (contains? result :metadata-values))
+          (is (contains? result :ingestion-stats))
+          (is (contains? result :ingestion-failures))
+          (is (contains? result :watch-stats))
+          (is (contains? result :path-captures))
           (is (instance? InMemoryEmbeddingStore (:embedding-store result)))
-          (is (instance? clojure.lang.Atom (:metadata-values result)))
-          (is (= {} @(:metadata-values result))))
+          (is (= {} (:metadata-values result)))
+          (is (= [] (:ingestion-failures result)))
+          (is (= {:path-specs []} (:path-captures result)))
+          (is (= {:sources []
+                  :total-documents 0
+                  :total-segments 0
+                  :total-errors 0
+                  :last-ingestion-at nil}
+                 (:ingestion-stats result)))
+          (is (= {:enabled? false
+                  :sources []
+                  :events {:created 0
+                           :modified 0
+                           :deleted 0
+                           :last-event-at nil}
+                  :debounce {:queued 0
+                             :processed 0}}
+                 (:watch-stats result))))
         (catch clojure.lang.ExceptionInfo e
           ;; Expected to fail on platforms without proper native library support
           (is (= "Failed to initialize embedding model" (.getMessage e))))))

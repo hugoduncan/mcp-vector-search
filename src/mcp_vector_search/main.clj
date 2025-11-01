@@ -11,6 +11,7 @@
     [mcp-vector-search.config :as config]
     [mcp-vector-search.ingest :as ingest]
     [mcp-vector-search.lifecycle :as lifecycle]
+    [mcp-vector-search.resources :as resources]
     [mcp-vector-search.tools :as tools]))
 
 (def ^:private default-config-path
@@ -31,10 +32,12 @@
       ;; Start file watches after initial ingest
       (lifecycle/start-watches parsed-config)
 
-      (let [search-tool (tools/search-tool system parsed-config)]
+      (let [search-tool (tools/search-tool system parsed-config)
+            resource-defs (resources/resource-definitions lifecycle/system)]
         (with-open [server (mcp-server/create-server
                              {:transport {:type :stdio}
                               :tools {(:name search-tool) search-tool}
+                              :resources resource-defs
                               :capabilities {:logging {}}})]
           ;; Add server to system for logging access
           (lifecycle/set-server server)
