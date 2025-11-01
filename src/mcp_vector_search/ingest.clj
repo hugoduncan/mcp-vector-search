@@ -6,23 +6,34 @@
   strategies, and stores embeddings in the vector database. Tracks metadata
   values for dynamic schema generation.
 
+  ## Strategy Extensibility
+  The `process-document` multimethod (defined in `ingest.common`) enables
+  multiple ingestion strategies to coexist. This namespace requires strategy
+  namespaces (e.g., `ingest.chunked`) that extend the multimethod with their
+  implementations.
+
+  Built-in strategies include `:whole-document` (embeds and stores entire files),
+  `:namespace-doc` (embeds namespace docstrings but stores full source),
+  `:file-path` (stores only paths), and `:chunked` (splits documents into chunks).
+
+  To add a new strategy:
+  1. Create namespace `mcp-vector-search.ingest.<strategy-name>`
+  2. Require `mcp-vector-search.ingest.common`
+  3. Implement `(defmethod common/process-document :strategy-keyword ...)`
+  4. Require the new namespace here to ensure it's loaded
+
   ## Implementation Notes
-  Uses the `process-document` multimethod to support different processing
-  strategies. Built-in strategies include `:whole-document` (embeds and stores
-  entire files), `:namespace-doc` (embeds namespace docstrings but stores full
-  source), and `:file-path` (stores only paths). File matching combines regex
-  patterns from path specs with filesystem walking."
+  File matching combines regex patterns from path specs with filesystem walking."
   (:require
     [clojure.java.io :as io]
     [clojure.string :as str]
     [mcp-clj.mcp-server.logging :as logging]
+    [mcp-vector-search.ingest.chunked]
+    [mcp-vector-search.ingest.common :as common]
     [mcp-vector-search.parse :as parse])
   (:import
     (dev.langchain4j.data.document
-      Document
       Metadata)
-    (dev.langchain4j.data.document.splitter
-      DocumentSplitters)
     (dev.langchain4j.data.embedding
       Embedding)
     (dev.langchain4j.data.segment
@@ -152,8 +163,6 @@
                              :ingest ingest}))))
                     files))))))
 
-;; Ingestion strategies
-
 (defn- record-metadata-values
   "Record metadata field values in the system's metadata-values atom.
   Updates the atom to track all distinct values seen for each metadata key."
@@ -165,71 +174,15 @@
                    current
                    metadata))))
 
-;;; Unified pipeline protocol
+;;; Strategy implementations
 
-(defn- generate-segment-id
-  "Generate a segment ID for a document segment.
-  For single-segment documents, returns the file-id.
-  For multi-segment documents, appends #index to the file-id."
-  ([file-id]
-   file-id)
-  ([file-id index]
-   (str file-id "#" index)))
-
-(defn- build-lc4j-metadata
-  "Convert a Clojure metadata map to a LangChain4j Metadata object.
-  Converts keyword keys to strings."
-  [metadata]
-  (let [string-metadata (into {} (map (fn [[k v]] [(name k) v]) metadata))]
-    (Metadata/from string-metadata)))
-
-(defn- create-segment-descriptor
-  "Create a segment descriptor with all required fields.
-
-  Parameters:
-  - file-id: Shared identifier for all segments from the same file
-  - segment-id: Unique identifier for this specific segment
-  - text-to-embed: Text content to use for embedding generation
-  - content-to-store: Text content to store in the vector database
-  - metadata: Metadata map (will be enhanced with file-id, segment-id, and doc-id)"
-  [file-id segment-id text-to-embed content-to-store metadata]
-  (let [enhanced-metadata (assoc metadata
-                                 :file-id file-id
-                                 :segment-id segment-id
-                                 :doc-id file-id)]
-    {:file-id file-id
-     :segment-id segment-id
-     :text-to-embed text-to-embed
-     :content-to-store content-to-store
-     :metadata enhanced-metadata}))
-
-(defmulti process-document
-  "Process a document and return a sequence of segment descriptors.
-
-  Dispatches on strategy keyword. Implementations should transform content
-  into segment descriptors that specify what to embed and what to store.
-
-  Parameters:
-  - strategy: Keyword identifying the processing strategy
-  - path: File path (becomes file-id)
-  - content: File content string
-  - metadata: Base metadata map (without file-id/segment-id)
-
-  Returns: Sequence of segment descriptor maps with keys:
-  - :file-id - Shared ID for all segments from this file
-  - :segment-id - Unique ID for this segment
-  - :text-to-embed - Text content to use for embedding generation
-  - :content-to-store - Text content to store in the vector database
-  - :metadata - Enhanced metadata including both IDs"
-  (fn [strategy _path _content _metadata] strategy))
-
-(defmethod process-document :whole-document
+(defmethod common/process-document :whole-document
   [_strategy path content metadata]
   (let [file-id path
-        segment-id (generate-segment-id file-id)]
-    [(create-segment-descriptor file-id segment-id content content metadata)]))
+        segment-id (common/generate-segment-id file-id)]
+    [(common/create-segment-descriptor file-id segment-id content content metadata)]))
 
-(defmethod process-document :namespace-doc
+(defmethod common/process-document :namespace-doc
   [_strategy path content metadata]
   (let [ns-form (parse/parse-first-ns-form content)]
     (when-not ns-form
@@ -241,58 +194,15 @@
         (when-not namespace
           (throw (ex-info "Could not extract namespace" {})))
         (let [file-id path
-              segment-id (generate-segment-id file-id)
+              segment-id (common/generate-segment-id file-id)
               enhanced-metadata (assoc metadata :namespace namespace)]
-          [(create-segment-descriptor file-id segment-id docstring content enhanced-metadata)])))))
+          [(common/create-segment-descriptor file-id segment-id docstring content enhanced-metadata)])))))
 
-(defmethod process-document :file-path
+(defmethod common/process-document :file-path
   [_strategy path content metadata]
   (let [file-id path
-        segment-id (generate-segment-id file-id)]
-    [(create-segment-descriptor file-id segment-id content path metadata)]))
-
-(def ^:private splitter-cache
-  "Memoized cache for DocumentSplitter instances keyed by [chunk-size chunk-overlap]."
-  (memoize
-    (fn [chunk-size chunk-overlap]
-      (DocumentSplitters/recursive (int chunk-size) (int chunk-overlap)))))
-
-(defn- validate-chunk-config
-  "Validates chunk configuration values, throwing detailed errors for invalid settings."
-  [chunk-size chunk-overlap path]
-  (when-not (and (integer? chunk-size) (pos? chunk-size))
-    (throw (ex-info (str "Invalid :chunk-size for " path ": must be a positive integer")
-                    {:chunk-size chunk-size :path path})))
-  (when-not (and (integer? chunk-overlap) (>= chunk-overlap 0))
-    (throw (ex-info (str "Invalid :chunk-overlap for " path ": must be a non-negative integer")
-                    {:chunk-overlap chunk-overlap :path path})))
-  (when-not (< chunk-overlap chunk-size)
-    (throw (ex-info (str "Invalid chunk configuration for " path ": :chunk-overlap must be less than :chunk-size")
-                    {:chunk-size chunk-size :chunk-overlap chunk-overlap :path path}))))
-
-(defmethod process-document :chunked
-  [_strategy path content metadata]
-  (let [chunk-size (get metadata :chunk-size 512)
-        chunk-overlap (get metadata :chunk-overlap 100)
-        _ (validate-chunk-config chunk-size chunk-overlap path)
-        splitter (splitter-cache chunk-size chunk-overlap)
-        document (Document/from content)
-        chunks (.split splitter document)
-        chunk-count (count chunks)
-        file-id path]
-    (second
-     (reduce
-      (fn [[char-offset result] [chunk-index chunk]]
-        (let [chunk-text (.text chunk)
-              segment-id (str file-id "-chunk-" chunk-index)
-              enhanced-metadata (assoc metadata
-                                       :chunk-index chunk-index
-                                       :chunk-count chunk-count
-                                       :chunk-offset char-offset)]
-          [(+ char-offset (- (count chunk-text) chunk-overlap))
-           (conj result (create-segment-descriptor file-id segment-id chunk-text chunk-text enhanced-metadata))]))
-      [0 []]
-      (map-indexed vector chunks)))))
+        segment-id (common/generate-segment-id file-id)]
+    [(common/create-segment-descriptor file-id segment-id content path metadata)]))
 
 (defn- validate-segment
   "Validate that a segment descriptor has all required fields and valid values.
@@ -338,13 +248,13 @@
   (try
     (let [content (slurp file)
           ;; Process document to get segment descriptors
-          segment-descriptors (process-document ingest path content metadata)]
+          segment-descriptors (common/process-document ingest path content metadata)]
       ;; Validate all segment descriptors
       (doseq [descriptor segment-descriptors]
         (validate-segment descriptor))
       ;; Create embeddings and store segments
       (doseq [{:keys [file-id text-to-embed content-to-store metadata]} segment-descriptors]
-        (let [lc4j-metadata (build-lc4j-metadata metadata)
+        (let [lc4j-metadata (common/build-lc4j-metadata metadata)
               response (.embed ^EmbeddingModel embedding-model text-to-embed)
               embedding (.content ^dev.langchain4j.model.output.Response response)
               storage-segment (TextSegment/from content-to-store lc4j-metadata)]

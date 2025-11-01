@@ -6,6 +6,8 @@
     [clojure.test :refer [deftest testing is]]
     [mcp-vector-search.config :as config]
     [mcp-vector-search.ingest :as ingest]
+    [mcp-vector-search.ingest.chunked]
+    [mcp-vector-search.ingest.common :as common]
     [mcp-vector-search.watch :as watch])
   (:import
     (dev.langchain4j.data.segment
@@ -46,7 +48,7 @@
 ;;; Test strategy for multi-segment files
 
 ;; Define at load time to ensure it's available for all test runs
-(defmethod ingest/process-document :test-watch-multi-segment
+(defmethod common/process-document :test-watch-multi-segment
   [_strategy path content metadata]
   (let [lines (if (empty? content)
                 [""]
@@ -460,7 +462,7 @@
                           :chunk-overlap 80}]
 
             ;; Process document directly to get segments
-            (let [segments (ingest/process-document :chunked
+            (let [segments (common/process-document :chunked
                                                     canonical-path
                                                     test-content
                                                     metadata)]
