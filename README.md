@@ -125,31 +125,14 @@ Add to `~/.clojure/deps.edn`:
 
 **Note**: Replace `LATEST_SHA_HERE` with the latest commit SHA from this repository.
 
-### Claude Code Setup
+### Add to MCP Client
 
+**Claude Code:**
 ```bash
 claude mcp add mcp-vector-search -- $(which clojure) -X:mcp-vector-search
 ```
 
-### Other MCP Clients
-
-**Claude Desktop** - Add to your config file:
-- macOS: `~/Library/Application Support/Claude/claude_desktop_config.json`
-- Windows: `%APPDATA%\Claude\claude_desktop_config.json`
-- Linux: `~/.config/Claude/claude_desktop_config.json`
-
-```json
-{
-  "mcpServers": {
-    "mcp-vector-search": {
-      "command": "clojure",
-      "args": ["-X:mcp-vector-search"]
-    }
-  }
-}
-```
-
-See [doc/install.md](doc/install.md) for detailed installation instructions and troubleshooting.
+**Claude Desktop, Cline, and other MCP clients:** See [doc/install.md](doc/install.md) for setup instructions and troubleshooting.
 
 ## Basic Configuration
 
@@ -165,156 +148,68 @@ Configuration file location (first found is used):
 
 Indexes all markdown files recursively under `/docs/`.
 
-### Path Patterns
+### Path Patterns and Metadata
 
-Path specs support globs and regex captures:
+Path specs support globs (`*`, `**`), regex captures, and custom metadata:
 
 ```clojure
-;; All markdown in single directory
-{:sources [{:path "/docs/*.md"}]}
-
-;; Recursive (all subdirectories)
+;; Basic: recursive glob
 {:sources [{:path "/docs/**/*.md"}]}
 
-;; Capture directory name as metadata
-{:sources [{:path "/docs/(?<category>[^/]+)/*.md"}]}
-
-;; Multiple sources
-{:sources [{:path "/docs/**/*.md"}
-           {:path "/src/**/*.clj"}]}
-```
-
-### Adding Metadata
-
-Metadata enables filtering searches to specific subsets:
-
-```clojure
+;; With capture and metadata
 {:sources [{:path "/docs/(?<category>[^/]+)/*.md"
             :project "myapp"
             :type "documentation"}]}
+;; File /docs/api/auth.md gets metadata:
+;; {:project "myapp", :type "documentation", :category "api"}
 ```
 
-For file `/docs/api/auth.md`:
-- Metadata: `{:project "myapp", :type "documentation", :category "api"}`
-
-Any keys except `:path`, `:name`, `:ingest`, and `:watch?` become metadata. Named captures (`(?<name>...)`) are also added as metadata.
-
-See [doc/path-spec.md](doc/path-spec.md) for the formal path specification syntax.
+Any config keys except `:path`, `:name`, `:ingest`, and `:watch?` become metadata. See [doc/path-spec.md](doc/path-spec.md) and [doc/using.md](doc/using.md) for full syntax and examples.
 
 ## Using the Search Tool
 
-Once configured, AI assistants can search indexed documents.
-
-### Basic Search
-
-Simply ask the assistant to find information:
+Simply ask the AI assistant to find information:
 
 ```
 "Find documentation about rate limiting"
-"Show me examples of error handling"
-"Search for authentication setup instructions"
-```
-
-The assistant will use the search tool automatically.
-
-### Metadata Filtering
-
-Searches can filter by metadata:
-
-```
 "Search for API documentation in the admin category"
-"Find Clojure source files related to database connections"
+"Show me code examples of input validation"
 ```
 
-The assistant can use metadata filters like:
+The assistant uses semantic search automatically. Searches can filter by metadata (e.g., category, project, type).
 
-```json
-{
-  "query": "database connection",
-  "metadata": {
-    "category": "api",
-    "type": "clojure"
-  }
-}
-```
-
-### Search Parameters
-
+**Tool parameters:**
 - `query` (required): Search text
 - `limit` (optional): Max results (default: 10)
-- `metadata` (optional): Filter by metadata key-value pairs (AND logic)
-
-### Example Workflows
-
-**Documentation discovery**:
-```
-"What documentation exists about user authentication?"
-→ Returns: auth.md, security-guide.md, user-management.md
-```
-
-**Code pattern finding**:
-```
-"Find code examples of input validation in the API layer"
-→ Returns: Relevant source files with validation logic
-```
-
-**Just-in-time reference**:
-```
-"How do I configure the caching system?"
-→ Searches config docs, returns relevant sections
-```
+- `metadata` (optional): Filter by key-value pairs (AND logic)
 
 ## Advanced Features
 
-### Ingest Pipeline Strategies
+### Ingest Strategies
 
-Processing strategies control how documents are processed, embedded, and stored. Set via the `:ingest` key.
+Control how documents are processed, embedded, and stored:
 
-**`:whole-document` (default)** - Embeds and stores entire file:
-
-```clojure
-{:sources [{:path "/docs/**/*.md"
-            :ingest :whole-document}]}
-```
-
-**`:namespace-doc`** - For Clojure files, embeds only namespace docstring but returns full file:
+- **`:whole-document`** (default) - Embeds and stores complete file content
+- **`:namespace-doc`** - Embeds Clojure namespace docstrings, returns full source
+- **`:file-path`** - Embeds content but stores only the file path (saves memory)
+- **`:code-analysis`** - Analyzes code structure, creates segments per element (functions, classes, etc.)
+- **`:chunked`** - Splits large documents into smaller segments
 
 ```clojure
 {:sources [{:path "/src/**/*.clj"
             :ingest :namespace-doc}]}
 ```
 
-Useful for searching Clojure namespaces by description while returning complete source code. Adds `:namespace` to metadata.
-
-**`:file-path`** - Embeds content but stores only the file path:
-
-```clojure
-{:sources [{:path "/archive/**/*.txt"
-            :ingest :file-path}]}
-```
-
-Reduces memory for large document sets. Embeddings are still created from full content, but search results only include file paths. Your client can read files separately.
-
 ### File Watching
 
-Auto-reindex when files change during development:
+Auto-reindex when files change:
 
 ```clojure
-;; Watch all sources
 {:watch? true
- :sources [{:path "/docs/**/*.md"}
-           {:path "/src/**/*.clj"}]}
-
-;; Watch specific sources
-{:sources [{:path "/docs/**/*.md"
-            :watch? true}
-           {:path "/archive/**/*.md"
-            :watch? false}]}
+ :sources [{:path "/docs/**/*.md"}]}
 ```
 
-Changes are debounced (500ms) and automatically update the index.
-
-### Custom Search Description
+### Custom Tool Description
 
 Customize the search tool description for AI assistants:
 
@@ -323,36 +218,7 @@ Customize the search tool description for AI assistants:
  :sources [{:path "/docs/**/*.md"}]}
 ```
 
-### Complete Example
-
-```clojure
-{:description "Search project documentation and source code"
- :watch? true
- :sources [
-   ;; Documentation with category metadata
-   {:path "/docs/(?<category>[^/]+)/**/*.md"
-    :project "myapp"
-    :type "docs"}
-
-   ;; Clojure source - search by namespace doc
-   {:path "/src/**/*.clj"
-    :ingest :namespace-doc
-    :project "myapp"
-    :type "source"}
-
-   ;; Test files
-   {:path "/test/**/*.clj"
-    :ingest :namespace-doc
-    :project "myapp"
-    :type "test"}
-
-   ;; Large archive - path-only to save memory
-   {:path "/archive/**/*.txt"
-    :ingest :file-path
-    :watch? false}]}
-```
-
-See [doc/using.md](doc/using.md) for comprehensive configuration details and troubleshooting.
+**For complete configuration details**, including strategy options, advanced path patterns, metadata filtering, and troubleshooting, see [doc/using.md](doc/using.md).
 
 ## Development
 
@@ -414,6 +280,7 @@ Contributions welcome! Please:
 - **[doc/using.md](doc/using.md)** - Complete configuration reference, strategies, troubleshooting
 - **[doc/library-usage.md](doc/library-usage.md)** - Using mcp-vector-search as a library in custom MCP servers
 - **[doc/path-spec.md](doc/path-spec.md)** - Formal path specification syntax and grammar
+- **[CLAUDE.md](CLAUDE.md)** - Developer/AI assistant technical reference with architecture details
 
 ## License
 

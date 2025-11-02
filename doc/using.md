@@ -432,12 +432,33 @@ Each segment includes these metadata fields:
 
 **Note on Metadata Filtering**: All metadata filters use exact string matching only. Glob patterns like `"com.example.*"` are not supported. For broader matches, filter by `namespace` (package for Java) instead of `element-name`.
 
+**Implementation Details**:
+
+**Element Type Detection** (`code_analysis.clj:42-67`):
+- **Vars vs Macros**: Checks `:macro` flag in var definition to distinguish macros from regular vars
+- **Java Constructors**: Detected by presence of `:method` flag without `:return-type`
+- **Java Methods**: Have `:method` flag with `:return-type`
+- **Java Fields**: Have `:field` flag and `:type`
+- **Fallback Detection**: If flags are absent, uses `:return-type` for methods and `:type` for fields
+
+**Embedding Text Selection** (`code_analysis.clj:79-89`):
+- Docstring used if present and non-empty after trimming
+- Empty or whitespace-only docstrings are treated as absent
+- Element name used as fallback when docstring is absent or empty
+- This ensures all elements are searchable even without documentation
+
+**Visibility Detection**:
+- **Clojure**: Checks `:private` flag in element metadata
+- **Java**: Checks `:private` and `:protected` flags
+- Default visibility is "public" when no flags present
+
 **Error Handling**:
 
-Files with clj-kondo analysis errors:
-- Successfully analyzed elements are still indexed
-- Analysis failures are logged as warnings
-- Entire ingestion continues (does not fail)
+Files with clj-kondo analysis errors (`code_analysis.clj:182-187`):
+- Analysis errors throw `ex-info` with `:type :analysis-error`
+- Error includes path and error message in exception data
+- Ingestion of that file fails, but other files continue processing
+- Errors are tracked in the `ingestion://failures` MCP resource
 
 **Use Cases**:
 - **API Discovery**: Find functions/methods by purpose rather than name
@@ -632,6 +653,8 @@ clojure -X:mcp-vector-search :config-path '"/path/to/config.edn"'
 - Check path spec pattern matches your files
 - Try a broader search query
 - Check metadata filters aren't too restrictive
+- Check `ingestion://status` resource to verify documents were indexed
+- Check `ingestion://stats` resource to see per-source statistics
 
 ### Files Not Being Indexed
 
@@ -639,6 +662,8 @@ clojure -X:mcp-vector-search :config-path '"/path/to/config.edn"'
 - Check file permissions
 - Review server logs for errors during ingestion
 - Ensure path uses forward slashes `/` (even on Windows)
+- Check `ingestion://stats` resource to see files-matched vs files-processed counts
+- Check `ingestion://failures` resource for specific error messages and file paths
 
 ### Watch Not Working
 
@@ -646,6 +671,7 @@ clojure -X:mcp-vector-search :config-path '"/path/to/config.edn"'
 - Check the base path (literal prefix) exists and is accessible
 - On macOS, symlinked paths (like `/var`) are automatically normalized
 - Review server logs for watch setup errors
+- Check `ingestion://watch-stats` resource to verify watching is enabled and see event counts
 
 ### Namespace Embedding Errors
 
@@ -660,6 +686,69 @@ For large document sets:
 - Use `:ingest :file-path` to reduce stored content
 - Reduce the number of indexed files
 - Consider splitting into multiple server instances
+
+## MCP Resources for Debugging
+
+The server exposes five read-only MCP resources for debugging configuration and monitoring ingestion. Access these through your MCP client's resource read functionality.
+
+### ingestion://status
+
+Overall ingestion summary:
+- `:total-documents` - Total number of documents processed
+- `:total-segments` - Total number of segments created
+- `:total-errors` - Total number of errors encountered
+- `:last-ingestion-at` - Timestamp of last ingestion (ISO-8601 string or nil)
+
+**Use when**: You want a quick health check of the ingestion system.
+
+### ingestion://stats
+
+Per-source statistics showing how many files were matched and processed for each path spec:
+- `:path-spec` - Path specification that matched files
+- `:files-matched` - Number of files matched by path spec
+- `:files-processed` - Number of files successfully processed
+- `:segments-created` - Number of segments created from source
+- `:errors` - Number of errors encountered for this source
+
+**Use when**: Debugging path specs or investigating why certain files aren't being indexed.
+
+### ingestion://failures
+
+Bounded queue (last 20 errors) of ingestion failures:
+- `:file-path` - Path to file that failed to process
+- `:error-type` - Error type (`:read-error`, `:parse-error`, `:analysis-error`, etc.)
+- `:message` - Error message string
+- `:source-path` - Path spec that matched this file
+- `:timestamp` - ISO-8601 timestamp when error occurred
+
+**Use when**: Diagnosing ingestion failures or tracking problematic files.
+
+### ingestion://metadata
+
+Path segment captured metadata showing which path specs have regex captures and example values:
+- `:path` - Path specification string (e.g., `/docs/(?<category>[^/]+)/*.md`)
+- `:captures` - Map of capture name to set of captured values
+
+**Use when**: Verifying regex patterns extracted expected metadata from file paths.
+
+### ingestion://watch-stats
+
+File watching statistics (only populated when `:watch?` is enabled):
+- `:enabled` - Boolean indicating if watching is enabled globally
+- `:sources` - Vector of source watch configurations with `:path` and `:watching` status
+- `:events` - Event counts (`:created`, `:modified`, `:deleted`) and `:last-event-at` timestamp
+- `:debounce` - Debounce statistics (`:queued`, `:processed` event counts)
+
+**Use when**: Debugging file watching or verifying watch configuration is active.
+
+**Example Access** (via MCP client):
+```javascript
+// Access via MCP client's resource.read
+const status = await client.readResource("ingestion://status");
+const failures = await client.readResource("ingestion://failures");
+```
+
+All resources return JSON-formatted data and include error handling.
 
 ## Advanced Topics
 
@@ -754,3 +843,12 @@ All embeddings are automatically tagged with a `:doc-id` metadata field containi
 - Identifying the source file for search results
 
 When a file is updated or deleted during file watching, all segments with matching `:doc-id` (file-ID) are removed before re-indexing.
+
+## See Also
+
+- **[README.md](../README.md)** - Quick start guide and basic examples
+- **[doc/about.md](about.md)** - Project rationale and use cases
+- **[doc/install.md](install.md)** - Installation instructions for various MCP clients
+- **[doc/library-usage.md](library-usage.md)** - Using mcp-vector-search as a library, bundling resources
+- **[doc/path-spec.md](path-spec.md)** - Formal path specification syntax and grammar
+- **[CLAUDE.md](../CLAUDE.md)** - Developer/AI assistant technical reference with implementation details

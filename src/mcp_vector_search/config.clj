@@ -230,7 +230,7 @@
   (let [global-watch? (boolean watch?)]
     (cond-> {}
       sources (assoc :path-specs
-                     (mapv (fn [{:keys [path class-path name ingest watch?] :as source}]
+                     (mapv (fn [{:keys [path class-path name ingest watch? embedding content-strategy] :as source}]
                              (validate-source source)
                              (let [path-string (or path class-path)
                                    source-type (if path :filesystem :classpath)
@@ -241,6 +241,8 @@
                                  (seq metadata) (assoc :base-metadata metadata)
                                  name (assoc-in [:base-metadata :name] name)
                                  true (assoc :ingest strategy)
+                                 embedding (assoc :embedding embedding)
+                                 content-strategy (assoc :content-strategy content-strategy)
                                  true (assoc :source-type source-type)
                                  true (assoc :watch? (if (nil? watch?) global-watch? (boolean watch?))))))
                            sources))

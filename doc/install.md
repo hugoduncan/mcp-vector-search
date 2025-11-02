@@ -100,3 +100,10 @@ You can verify the installation by:
 - **Native access errors:** Ensure the `--enable-native-access=ALL-UNNAMED` JVM flag is included in the alias
 - **No documents indexed:** Check that the config file exists at `.mcp-vector-search/config.edn` and that the paths in `:sources` point to valid files
 - **Java version issues:** The embedding model requires Java 11 or later
+
+## See Also
+
+- **[using.md](using.md)** - Complete configuration guide and usage details
+- **[about.md](about.md)** - Project purpose and rationale
+- **[library-usage.md](library-usage.md)** - Embedding mcp-vector-search in custom MCP servers
+- **[../README.md](../README.md)** - Quick start and basic examples

@@ -236,3 +236,10 @@ Path specs use `/` as the path separator regardless of platform. The matcher ope
 - Captured values are strings
 - Captures are merged with base metadata (captures take precedence)
 - If a capture group doesn't match, it's not included in metadata
+
+## See Also
+
+- **[using.md](using.md)** - Configuration guide with path spec examples and strategies
+- **[library-usage.md](library-usage.md)** - Using path specs with classpath sources
+- **[../README.md](../README.md)** - Quick start examples using basic path patterns
+- **[../CLAUDE.md](../CLAUDE.md)** - Implementation details of path spec parsing

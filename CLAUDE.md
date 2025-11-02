@@ -10,9 +10,10 @@ An MCP (Model Context Protocol) server that indexes documents using semantic emb
 
 **Key capabilities**:
 - Semantic search across documentation, code, and knowledge bases
-- Configurable ingest pipeline strategies (`:whole-document`, `:namespace-doc`, `:file-path`)
+- Configurable ingest pipeline strategies (`:whole-document`, `:namespace-doc`, `:file-path`, `:code-analysis`, `:chunked`)
 - Metadata filtering to narrow searches
 - File watching for automatic re-indexing during development
+- MCP resources for debugging ingestion and monitoring
 
 See `doc/about.md` for detailed rationale.
 
@@ -102,6 +103,7 @@ The `:single-segment` strategy separates concerns:
 **Built-in Embedding Strategies**:
 - `:whole-document` - Embed full file content
 - `:namespace-doc` - Embed namespace docstring (Clojure files, adds `:namespace` metadata)
+- `:code-analysis` - Embed code elements extracted via clj-kondo (see Multi-Segment Strategy below)
 
 **Built-in Content Strategies**:
 - `:whole-document` - Store full file content
@@ -114,8 +116,9 @@ For ergonomic configuration, these `:ingest` values forward to `:single-segment`
 - `:namespace-doc` → embed ns doc, store full
 - `:file-path` → embed full, store path only
 
-**Multi-Segment Strategy**:
+**Multi-Segment Strategies**:
 - `:chunked` - Splits large documents using LangChain4j recursive text splitter (separate namespace, not composable)
+- `:code-analysis` - Analyzes code using clj-kondo, creates one segment per code element (vars, namespaces, classes, methods, fields, constructors)
 
 **Configuration Examples**:
 
@@ -148,6 +151,41 @@ To add new single-segment strategies, implement the `embed-content` or `extract-
 ```
 
 For multi-segment strategies, implement `process-document` in a dedicated namespace like `ingest/chunked.clj`.
+
+**Code Analysis Strategy Details**:
+
+The `:code-analysis` strategy (`ingest/code_analysis.clj`) uses clj-kondo to analyze Clojure and Java source files, creating one segment per code element.
+
+Configuration options (via source metadata):
+```clojure
+{:path "/src/**/*.clj"
+ :ingest :code-analysis
+ :visibility :public-only      ; :all (default) or :public-only
+ :element-types #{:var :macro}} ; optional set to filter element types
+```
+
+**What gets embedded**: Docstring if present (non-empty after trimming), otherwise element name.
+
+**What gets stored**: Complete clj-kondo analysis map for the element (as pr-str).
+
+**Metadata added per segment**:
+- `:element-type` - One of: var, macro, namespace, class, method, field, constructor
+- `:element-name` - Fully qualified name (e.g., "my.ns/my-var", "com.example.MyClass.method")
+- `:language` - "clojure" or "java"
+- `:visibility` - "public", "private", or "protected"
+- `:namespace` - Containing namespace/package (when present)
+
+**Element type detection** (`code_analysis.clj:42-67`):
+- Vars: Checks `:macro` flag to distinguish macros from regular vars
+- Java constructors: Detected by `:method` flag without `:return-type`
+- Java methods: Have `:method` flag with `:return-type`
+- Java fields: Have `:field` flag and `:type`
+
+**Edge cases handled**:
+- Empty or whitespace-only docstrings are treated as absent, element name is used instead
+- Analysis errors throw ex-info with `:type :analysis-error`
+- Elements without type or name are filtered out
+- Visibility filtering respects both Clojure (`:private` flag) and Java (`:private`, `:protected` flags)
 
 ### Metadata System
 
@@ -207,6 +245,43 @@ Global `system` atom in `lifecycle.clj` contains:
 - `:metadata-values` - atom tracking `{field-key #{values...}}`
 - `:watches` - atom containing active watch handlers (when `:watch?` enabled)
 
+### MCP Resources
+
+The server exposes five read-only MCP resources (`resources.clj`) for debugging configuration and monitoring ingestion:
+
+**`ingestion://status`** - Overall ingestion summary
+- Total documents processed
+- Total segments created
+- Total errors encountered
+- Last ingestion timestamp
+
+**`ingestion://stats`** - Per-source statistics
+- Path spec that matched files
+- Files matched vs. successfully processed
+- Segments created per source
+- Error counts per source
+
+**`ingestion://failures`** - Last 20 ingestion errors (bounded queue)
+- File path that failed
+- Error type (`:read-error`, `:parse-error`, `:analysis-error`, etc.)
+- Error message
+- Source path spec that matched the file
+- ISO-8601 timestamp
+
+**`ingestion://metadata`** - Path segment capture metadata
+- Path specs with named captures
+- Example captured values for each capture name
+- Useful for verifying regex patterns extracted expected metadata
+
+**`ingestion://watch-stats`** - File watching statistics (when `:watch?` enabled)
+- Global watch enabled status
+- Per-source watch status
+- Event counts (created, modified, deleted)
+- Debounce statistics (queued, processed)
+- Last event timestamp
+
+All resources return JSON and include error handling. Access via MCP client's resource read functionality or debug by examining the `:ingestion-stats`, `:ingestion-failures`, `:path-captures`, and `:watch-stats` keys in the system atom.
+
 ## Key Implementation Details
 
 ### Path Spec Parsing
@@ -232,13 +307,13 @@ Regex captures are extracted and merged with base-metadata to produce final file
 
 **Why needed**: Watch events provide canonical paths, but filesystem traversal may use raw paths. Without normalization, `.removeAll` operations during file updates/deletes won't find matching documents.
 
-**Implementation** (`ingest.clj:84-136`):
+**Implementation** (`util.clj:10-31`):
+- `normalize-file-path` function handles normalization centrally
 - Absolute paths are normalized using `.getCanonicalPath()`
 - Relative paths remain unchanged (preserves test compatibility)
+- Used by both `ingest.clj` (lines 151, 171, 185) and `watch.clj` (lines 249, 292, 301)
 - Pattern segments are rebuilt with normalized base path when needed
 - Trailing separators (`/`) are preserved during segment reconstruction
-
-**Watch synchronization** (`watch.clj:181-187`): Uses same normalization logic to ensure paths match those stored during ingestion.
 
 ### Search Tool
 `tools.clj/search-tool` creates an MCP tool spec with dynamic schema. The schema's metadata parameter has enum constraints based on ingested values, ensuring clients only use valid filter values.
@@ -256,6 +331,7 @@ Regex captures are extracted and merged with base-metadata to produce final file
 - **`doc/about.md`** - Project purpose, problem/solution, use cases
 - **`doc/install.md`** - Detailed installation for various MCP clients
 - **`doc/using.md`** - Complete configuration reference, strategies, file watching, troubleshooting
+- **`doc/library-usage.md`** - Using mcp-vector-search as a library, bundling resources
 - **`doc/path-spec.md`** - Formal path specification syntax and grammar
 
 ## Common Development Tasks
@@ -346,6 +422,13 @@ Verify embeddings were stored:
 ;; => 42
 ```
 
+Use MCP resources for detailed diagnostics (see "MCP Resources" section):
+- `ingestion://status` - Overall ingestion summary
+- `ingestion://stats` - Per-source statistics
+- `ingestion://failures` - Recent errors
+- `ingestion://metadata` - Captured metadata values
+- `ingestion://watch-stats` - File watching metrics
+
 ## Code Style Notes
 
 - Use doc strings for all public functions and macros (before argument vector)
@@ -358,3 +441,10 @@ Verify embeddings were stored:
 - Test strings should be short (≤20 chars if possible)
 - Mark temporary code with `TODO` comments
 - Mark tests matching current vs. intended behavior with `FIXME`
+
+## See Also
+
+- **[doc/using.md](doc/using.md)** - Complete user-facing configuration reference
+- **[doc/path-spec.md](doc/path-spec.md)** - Formal path specification syntax
+- **[doc/library-usage.md](doc/library-usage.md)** - Embedding mcp-vector-search as a library
+- **[README.md](README.md)** - Quick start and project overview

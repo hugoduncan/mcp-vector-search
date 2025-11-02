@@ -82,3 +82,10 @@ With file watching enabled, the search index stays current as you work. Agents a
 See [install.md](install.md) for installation instructions and [using.md](using.md) for configuration and usage details.
 
 The key insight: **expand what's accessible, not what's loaded**. mcp-vector-search gives agents the ability to reach beyond their context limitations and find the information they need, when they need it.
+
+## See Also
+
+- **[install.md](install.md)** - Installation instructions for various MCP clients
+- **[using.md](using.md)** - Configuration reference and detailed usage guide
+- **[library-usage.md](library-usage.md)** - Using mcp-vector-search as a library in custom MCP servers
+- **[../README.md](../README.md)** - Quick start and basic examples

@@ -100,7 +100,7 @@
   - :metadata - merged base metadata and captures
   - :ingest - processing strategy
   - :source-path - original path spec string for statistics tracking"
-  [{:keys [segments base-path base-metadata ingest path] :as _path-spec}]
+  [{:keys [segments base-path base-metadata ingest path embedding content-strategy] :as _path-spec}]
   (let [pattern (util/build-pattern segments)
         ;; ClassGraph's acceptPaths requires directory paths, not file paths
         dir-prefix (parent-directory base-path)
@@ -116,11 +116,14 @@
                                  (let [resource-path (.getPath resource)
                                        matcher (re-matcher pattern resource-path)]
                                    (when (.matches matcher)
-                                     (let [captures (util/extract-captures matcher segments)]
+                                     (let [captures (util/extract-captures matcher segments)
+                                           strategy-keys (cond-> {}
+                                                           embedding (assoc :embedding embedding)
+                                                           content-strategy (assoc :content-strategy content-strategy))]
                                        {:file        nil  ; No File object for classpath resources
                                         :path        resource-path
                                         :captures    captures
-                                        :metadata    (merge base-metadata captures)
+                                        :metadata    (merge base-metadata captures strategy-keys)
                                         :ingest      ingest
                                         :source-path path})))))
                                resources)]
@@ -145,7 +148,7 @@
   - :metadata - merged base metadata and captures
   - :ingest - processing strategy
   - :source-path - original path spec string for statistics tracking"
-  [{:keys [segments base-path base-metadata ingest path] :as _path-spec}]
+  [{:keys [segments base-path base-metadata ingest path embedding content-strategy] :as _path-spec}]
   (let [base-file (io/file base-path)
         ;; Normalize base path to handle symlinks (e.g., /var -> /private/var)
         normalized-base (util/normalize-file-path base-file)
@@ -165,7 +168,10 @@
                                                                        (str normalized-base "/")
                                                                        normalized-base)}]
                                              remaining))))
-        pattern (util/build-pattern normalized-segments)]
+        pattern (util/build-pattern normalized-segments)
+        strategy-keys (cond-> {}
+                        embedding (assoc :embedding embedding)
+                        content-strategy (assoc :content-strategy content-strategy))]
     (if (.isFile base-file)
       ;; Literal file path
       (let [file-path (util/normalize-file-path base-file)]
@@ -173,7 +179,7 @@
           [{:file        base-file
             :path        file-path
             :captures    {}
-            :metadata    (or base-metadata {})
+            :metadata    (merge (or base-metadata {}) strategy-keys)
             :ingest      ingest
             :source-path path}]))
       ;; Directory - walk and match
@@ -189,7 +195,7 @@
                             {:file        file
                              :path        file-path
                              :captures    captures
-                             :metadata    (merge base-metadata captures)
+                             :metadata    (merge base-metadata captures strategy-keys)
                              :ingest      ingest
                              :source-path path}))))
                     files))))))

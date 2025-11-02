@@ -359,3 +359,11 @@ java -jar target/my-server.jar
 ```
 
 Users can now run your MCP server with semantic search over your bundled documentation, without any configuration needed.
+
+## See Also
+
+- **[using.md](using.md)** - Complete configuration reference for all strategies and options
+- **[path-spec.md](path-spec.md)** - Formal syntax for path specifications and captures
+- **[install.md](install.md)** - Installation instructions for MCP clients
+- **[about.md](about.md)** - Project purpose and use cases
+- **[../README.md](../README.md)** - Quick start guide
