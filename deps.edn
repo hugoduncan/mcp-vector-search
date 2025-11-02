@@ -19,7 +19,8 @@
          org.clojure/clojure   {:mvn/version "1.12.3"}
          org.clojure/data.json {:mvn/version "2.5.1"}
          hawk/hawk             {:mvn/version "0.2.11"}
-         io.github.classgraph/classgraph {:mvn/version "4.8.181"}}
+         io.github.classgraph/classgraph {:mvn/version "4.8.181"}
+         clj-kondo/clj-kondo   {:mvn/version "2025.07.28"}}
 
  :aliases
  {:dev {:extra-paths ["test"]

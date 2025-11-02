@@ -35,6 +35,7 @@
     [clojure.string :as str]
     [mcp-clj.mcp-server.logging :as logging]
     [mcp-vector-search.ingest.chunked]
+    [mcp-vector-search.ingest.code-analysis]
     [mcp-vector-search.ingest.common :as common]
     [mcp-vector-search.ingest.single-segment]
     [mcp-vector-search.util :as util])

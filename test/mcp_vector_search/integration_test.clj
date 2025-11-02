@@ -308,3 +308,77 @@
           (finally
             (lifecycle/stop)
             (fs/delete-tree temp-dir)))))))
+
+
+(deftest code-analysis-integration-test
+  ;; Test complete pipeline for :code-analysis strategy
+  (testing "code-analysis strategy integration"
+
+    (testing "ingests Clojure file and enables search"
+      (let [test-fixtures-dir "test/resources/code_analysis_test"
+            user-config {:sources [{:name "test-code"
+                                    :path (str test-fixtures-dir "/sample.clj")
+                                    :ingest :code-analysis}]}
+            processed-config (config/process-config user-config)
+            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)
+                          :metadata-values {}})
+            ingest-result (ingest/ingest system processed-config)]
+
+        ;; Verify ingestion succeeded
+        (is (= 1 (:ingested ingest-result)))
+        (is (= 0 (:failed ingest-result)))
+
+        ;; Verify metadata values were captured
+        (is (contains? (:metadata-values @system) :element-type))
+        (is (= #{"clojure"} (:language (:metadata-values @system))))
+
+        ;; Verify search works
+        (let [search-tool (tools/search-tool system processed-config)
+              impl (:implementation search-tool)
+              search-result (impl nil {:query "function" :limit 5})]
+          (is (false? (:isError search-result)))
+          (is (pos? (count (json/read-str (-> search-result :content first :text))))))))
+
+    (testing "metadata filtering works"
+      (let [test-fixtures-dir "test/resources/code_analysis_test"
+            user-config {:sources [{:path (str test-fixtures-dir "/sample.clj")
+                                    :ingest :code-analysis}]}
+            processed-config (config/process-config user-config)
+            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)
+                          :metadata-values {}})
+            _ (ingest/ingest system processed-config)
+            search-tool (tools/search-tool system processed-config)
+            impl (:implementation search-tool)]
+
+        ;; Search with metadata filter should succeed
+        (let [result (impl nil {:query "sample" :metadata {"element-type" "namespace"}})]
+          (is (false? (:isError result)))
+          (is (pos? (count (json/read-str (-> result :content first :text))))))))
+
+    (testing "ingests Java file"
+      (let [test-fixtures-dir "test/resources/code_analysis_test"
+            user-config {:sources [{:path (str test-fixtures-dir "/Sample.java")
+                                    :ingest :code-analysis}]}
+            processed-config (config/process-config user-config)
+            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)
+                          :metadata-values {}})
+            ingest-result (ingest/ingest system processed-config)]
+
+        (is (= 1 (:ingested ingest-result)))
+        (is (= #{"java"} (:language (:metadata-values @system))))))
+
+    (testing "handles files with partial errors"
+      (let [test-fixtures-dir "test/resources/code_analysis_test"
+            user-config {:sources [{:path (str test-fixtures-dir "/error.clj")
+                                    :ingest :code-analysis}]}
+            processed-config (config/process-config user-config)
+            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)
+                          :metadata-values {}})
+            ingest-result (ingest/ingest system processed-config)]
+
+        ;; File has syntax errors but also valid elements, so it ingests successfully
+        (is (= 1 (:ingested ingest-result)))))))

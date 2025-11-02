@@ -308,6 +308,144 @@ Splits documents into smaller segments using LangChain4j's recursive text splitt
    :chunk-overlap 100}]}
 ```
 
+#### `:code-analysis`
+
+Analyzes Clojure and Java source files using clj-kondo to extract code elements (vars, namespaces, classes, methods, fields, macros). Creates one searchable segment per code element with docstrings for semantic search and complete analysis metadata for detailed results.
+
+```clojure
+{:sources [{:path "/src/**/*.clj"
+            :ingest :code-analysis}]}
+```
+
+**Use when**: You want to search code by documentation or API discovery, finding functions/classes/methods based on their purpose rather than file names.
+
+**Configuration Options**:
+
+```clojure
+{:sources [{:path "/src/**/*.clj"
+            :ingest :code-analysis
+            :visibility :public-only        ; :all (default) | :public-only
+            :element-types #{:var :macro}}]} ; optional filter
+```
+
+**`:visibility`** - Controls which elements to include based on access level:
+- `:all` (default) - Include all elements regardless of visibility
+- `:public-only` - Include only public elements
+  - Clojure: Excludes vars with `^:private` or `{:private true}` metadata
+  - Java: Excludes members with `private` or `protected` access modifiers
+
+**`:element-types`** (optional) - Set of element types to include:
+- If omitted: Include all element types
+- If provided: Only include specified types
+- Valid types: `:var`, `:macro`, `:namespace`, `:class`, `:method`, `:field`, `:constructor`
+
+**Characteristics**:
+- Multiple segments per file (1:N relationship, one per code element)
+- Embedding uses docstring if present, otherwise element name
+- Content stores complete clj-kondo analysis map as EDN string
+- Supports both Clojure (.clj, .cljs, .cljc) and Java (.java) files
+- All segments share same `:doc-id` (file path) for batch removal during updates
+
+**Segment Metadata**:
+
+Each segment includes these metadata fields:
+- `:element-type` - Type of code element ("var", "macro", "namespace", "class", "method", "field", "constructor")
+- `:element-name` - Qualified name (e.g., "my.ns/my-fn" or "com.example.MyClass.myMethod")
+- `:language` - Source language ("clojure" or "java")
+- `:namespace` - Containing namespace (Clojure) or package (Java)
+- `:visibility` - Access level ("public", "private", or "protected")
+- Plus standard metadata: `:doc-id`, `:file-id`, `:segment-id`
+- Plus any path spec captures from configuration
+
+**Example Configurations**:
+
+```clojure
+;; Search all code elements in Clojure source
+{:sources [{:path "/src/**/*.clj"
+            :ingest :code-analysis}]}
+
+;; Search only public API
+{:sources [{:path "/src/**/*.clj"
+            :ingest :code-analysis
+            :visibility :public-only}]}
+
+;; Search only vars and macros (exclude namespaces)
+{:sources [{:path "/src/**/*.clj"
+            :ingest :code-analysis
+            :element-types #{:var :macro}}]}
+
+;; Java source code analysis
+{:sources [{:path "/src/**/*.java"
+            :ingest :code-analysis
+            :visibility :public-only}]}
+
+;; Multi-language codebase
+{:sources [
+  {:path "/src/clj/**/*.clj"
+   :ingest :code-analysis
+   :language-tag "clojure"}
+
+  {:path "/src/java/**/*.java"
+   :ingest :code-analysis
+   :language-tag "java"}]}
+```
+
+**Search Examples**:
+
+```json
+// Find authentication-related functions
+{
+  "query": "authenticate user credentials",
+  "limit": 10,
+  "metadata": {
+    "element-type": "var",
+    "visibility": "public"
+  }
+}
+
+// Find methods in a specific package (broader match)
+{
+  "query": "configuration management",
+  "metadata": {
+    "element-type": "method",
+    "namespace": "com.example"
+  }
+}
+
+// Find a specific method (exact match)
+{
+  "query": "load configuration",
+  "metadata": {
+    "element-name": "com.example.ConfigManager.loadConfig"
+  }
+}
+
+// Find macros in a namespace
+{
+  "query": "control flow",
+  "metadata": {
+    "element-type": "macro",
+    "namespace": "my.app.macros"
+  }
+}
+```
+
+**Note on Metadata Filtering**: All metadata filters use exact string matching only. Glob patterns like `"com.example.*"` are not supported. For broader matches, filter by `namespace` (package for Java) instead of `element-name`.
+
+**Error Handling**:
+
+Files with clj-kondo analysis errors:
+- Successfully analyzed elements are still indexed
+- Analysis failures are logged as warnings
+- Entire ingestion continues (does not fail)
+
+**Use Cases**:
+- **API Discovery**: Find functions/methods by purpose rather than name
+- **Code Search**: Semantic search across codebase documentation
+- **Refactoring Aid**: Locate related functionality across files
+- **Onboarding**: Help new developers discover relevant APIs
+- **Documentation**: Enable AI-powered code exploration
+
 #### `:single-segment` - Composable Strategies
 
 Enables composing any embedding strategy with any content strategy for single-segment processing. Requires both `:embedding` and `:content-strategy` configuration keys.
