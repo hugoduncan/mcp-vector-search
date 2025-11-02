@@ -2,6 +2,7 @@
   (:require
     [clojure.data.json :as json]
     [clojure.java.io :as io]
+    [clojure.string :as str]
     [clojure.test :refer [deftest testing is]]
     [mcp-vector-search.ingest :as sut]
     [mcp-vector-search.ingest.chunked]
@@ -223,8 +224,8 @@
         (.mkdirs test-dir)
         (spit test-file "test content")
         (try
-          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:source "test"}
@@ -245,8 +246,8 @@
         (spit file1 "content 1")
         (spit file2 "content 2")
         (try
-          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)})
                 file-maps [{:file file1
                             :path (.getPath file1)
                             :metadata {:version "v1"}
@@ -264,8 +265,8 @@
             (.delete test-dir)))))
 
     (testing "handles file read errors"
-      (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                    :embedding-store (InMemoryEmbeddingStore.)}
+      (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)})
             nonexistent-file (io/file "nonexistent.txt")
             file-maps [{:file nonexistent-file
                         :path (.getPath nonexistent-file)
@@ -289,8 +290,8 @@
         (spit file1 "version 1")
         (spit file2 "version 2")
         (try
-          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)})
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath test-dir)}
                                      {:type :literal :value "/"}
@@ -317,8 +318,8 @@
         (spit file1 "a")
         (spit file2 "b")
         (try
-          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)})
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath file1)}]
                           :base-path (.getPath file1)
@@ -339,8 +340,8 @@
       (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/empty-spec")]
         (.mkdirs test-dir)
         (try
-          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)})
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath test-dir)}
                                      {:type :literal :value "/nonexistent.txt"}]
@@ -366,10 +367,9 @@
         (spit file2 "version 2")
         (spit file3 "version 1 copy")
         (try
-          (let [metadata-values (atom {})
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :metadata-values metadata-values}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)
+                              :metadata-values {}})
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath test-dir)}
                                      {:type :literal :value "/"}
@@ -381,9 +381,9 @@
                           :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 3 (:ingested result)))
-            (is (= #{:version :type :doc-id :file-id :segment-id} (set (keys @metadata-values))))
-            (is (= #{"v1" "v2"} (:version @metadata-values)))
-            (is (= #{"doc"} (:type @metadata-values))))
+            (is (= #{:version :type :doc-id :file-id :segment-id} (set (keys (:metadata-values @system)))))
+            (is (= #{"v1" "v2"} (:version (:metadata-values @system))))
+            (is (= #{"doc"} (:type (:metadata-values @system)))))
           (finally
             (.delete file1)
             (.delete file2)
@@ -398,10 +398,9 @@
         (spit file1 "content a")
         (spit file2 "content b")
         (try
-          (let [metadata-values (atom {})
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :metadata-values metadata-values}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)
+                              :metadata-values {}})
                 config1 {:path-specs
                          [{:segments [{:type :literal :value (.getPath file1)}]
                            :base-path (.getPath file1)
@@ -413,9 +412,9 @@
                            :base-metadata {:category "type2"}
                            :ingest :whole-document}]}]
             (sut/ingest system config1)
-            (is (= #{"type1"} (:category @metadata-values)))
+            (is (= #{"type1"} (:category (:metadata-values @system))))
             (sut/ingest system config2)
-            (is (= #{"type1" "type2"} (:category @metadata-values))))
+            (is (= #{"type1" "type2"} (:category (:metadata-values @system)))))
           (finally
             (.delete file1)
             (.delete file2)
@@ -427,18 +426,17 @@
         (.mkdirs test-dir)
         (spit file1 "content")
         (try
-          (let [metadata-values (atom {})
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :metadata-values metadata-values}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)
+                              :metadata-values {}})
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath file1)}]
                           :base-path (.getPath file1)
                           :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 1 (:ingested result)))
-            (is (= #{:doc-id :file-id :segment-id} (set (keys @metadata-values))))
-            (is (= #{(.getPath file1)} (:doc-id @metadata-values))))
+            (is (= #{:doc-id :file-id :segment-id} (set (keys (:metadata-values @system)))))
+            (is (= #{(.getPath file1)} (:doc-id (:metadata-values @system)))))
           (finally
             (.delete file1)
             (.delete test-dir)))))
@@ -451,10 +449,9 @@
         (spit file1 "content 1")
         (spit file2 "content 2")
         (try
-          (let [metadata-values (atom {})
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :metadata-values metadata-values}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)
+                              :metadata-values {}})
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath test-dir)}
                                      {:type :literal :value "/"}
@@ -464,7 +461,7 @@
                           :ingest :whole-document}]}
                 result (sut/ingest system config)]
             (is (= 2 (:ingested result)))
-            (is (= #{(.getPath file1) (.getPath file2)} (:doc-id @metadata-values))))
+            (is (= #{(.getPath file1) (.getPath file2)} (:doc-id (:metadata-values @system)))))
           (finally
             (.delete file1)
             (.delete file2)
@@ -481,10 +478,9 @@
         (.mkdirs test-dir)
         (spit test-file "(ns foo.bar \"A namespace\" (:require [clojure.string]))\n(defn f [] :x)")
         (try
-          (let [metadata-values (atom {})
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :metadata-values metadata-values}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)
+                              :metadata-values {}})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:source "test"}
@@ -492,8 +488,8 @@
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             (is (= 0 (:failed result)))
-            (is (= #{"foo.bar"} (:namespace @metadata-values)))
-            (is (= #{"test"} (:source @metadata-values))))
+            (is (= #{"foo.bar"} (:namespace (:metadata-values @system))))
+            (is (= #{"test"} (:source (:metadata-values @system)))))
           (finally
             (.delete test-file)
             (.delete test-dir)))))
@@ -504,8 +500,8 @@
         (.mkdirs test-dir)
         (spit test-file "(ns foo.baz)\n(defn g [] :y)")
         (try
-          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
@@ -524,8 +520,8 @@
         (.mkdirs test-dir)
         (spit test-file "just some text")
         (try
-          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
@@ -544,8 +540,8 @@
         (.mkdirs test-dir)
         (spit test-file "this is {{{ malformed [[[")
         (try
-          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
@@ -563,18 +559,17 @@
         (.mkdirs test-dir)
         (spit test-file "(ns com.example \"Example NS\")")
         (try
-          (let [metadata-values (atom {})
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :metadata-values metadata-values}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)
+                              :metadata-values {}})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:type "lib"}
                             :ingest :namespace-doc}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
-            (is (= #{"com.example"} (:namespace @metadata-values)))
-            (is (= #{"lib"} (:type @metadata-values))))
+            (is (= #{"com.example"} (:namespace (:metadata-values @system))))
+            (is (= #{"lib"} (:type (:metadata-values @system)))))
           (finally
             (.delete test-file)
             (.delete test-dir)))))
@@ -585,17 +580,16 @@
         (.mkdirs test-dir)
         (spit test-file "(ns my.ns \"Docs\")")
         (try
-          (let [metadata-values (atom {})
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :metadata-values metadata-values}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)
+                              :metadata-values {}})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
                             :ingest :namespace-doc}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
-            (is (= #{(.getPath test-file)} (:doc-id @metadata-values))))
+            (is (= #{(.getPath test-file)} (:doc-id (:metadata-values @system)))))
           (finally
             (.delete test-file)
             (.delete test-dir)))))))
@@ -611,8 +605,8 @@
         (spit test-file "This is the full document content that should not be stored")
         (try
           (let [embedding-store (InMemoryEmbeddingStore.)
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store embedding-store}
+                system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store embedding-store})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:source "test"}
@@ -640,19 +634,18 @@
         (.mkdirs test-dir)
         (spit test-file "content")
         (try
-          (let [metadata-values (atom {})
-                embedding-store (InMemoryEmbeddingStore.)
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store embedding-store
-                        :metadata-values metadata-values}
+          (let [embedding-store (InMemoryEmbeddingStore.)
+                system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store embedding-store
+                              :metadata-values {}})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:category "docs" :version "v1"}
                             :ingest :file-path}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
-            (is (= #{"docs"} (:category @metadata-values)))
-            (is (= #{"v1"} (:version @metadata-values)))
+            (is (= #{"docs"} (:category (:metadata-values @system))))
+            (is (= #{"v1"} (:version (:metadata-values @system))))
             ;; Verify metadata via search with filter
             (let [search-tool (tools/search-tool system {})
                   impl (:implementation search-tool)
@@ -682,8 +675,8 @@
         (spit file2 "content two")
         (try
           (let [embedding-store (InMemoryEmbeddingStore.)
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store embedding-store}
+                system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store embedding-store})
                 file-maps [{:file file1
                             :path (.getPath file1)
                             :metadata {}
@@ -828,17 +821,16 @@
   (testing "error tracking"
 
     (testing "classifies and records read errors"
-      (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                    :embedding-store (InMemoryEmbeddingStore.)
-                    :ingestion-failures []}
+      (let [system-atom (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                               :embedding-store (InMemoryEmbeddingStore.)
+                               :ingestion-failures []})
             nonexistent-file (io/file "nonexistent.txt")
             file-maps [{:file nonexistent-file
                         :path (.getPath nonexistent-file)
                         :metadata {}
                         :ingest :whole-document
                         :source-path "/test/*"}]
-            system-atom (atom system)
-            result (sut/ingest-file system system-atom (first file-maps))]
+            result (sut/ingest-file system-atom (first file-maps))]
         (is (some? (:error result)))
         (is (= :read-error (:error-type result)))
         (is (= 1 (count (:ingestion-failures @system-atom))))
@@ -855,16 +847,15 @@
         (.mkdirs test-dir)
         (spit test-file "(ns foo)")
         (try
-          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :ingestion-failures []}
-                system-atom (atom system)
+          (let [system-atom (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                                   :embedding-store (InMemoryEmbeddingStore.)
+                                   :ingestion-failures []})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
                             :ingest :namespace-doc
                             :source-path "/src/**/*.clj"}]
-                result (sut/ingest-file system system-atom (first file-maps))]
+                result (sut/ingest-file system-atom (first file-maps))]
             (is (some? (:error result)))
             (is (= :parse-error (:error-type result)))
             (is (= 1 (count (:ingestion-failures @system-atom))))
@@ -1040,10 +1031,9 @@
         (.mkdirs test-dir)
         (spit file1 "content")
         (try
-          (let [path-captures (atom {:path-specs []})
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :path-captures path-captures}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)
+                              :path-captures {:path-specs []}})
                 file-maps [{:file file1
                             :path (.getPath file1)
                             :metadata {:version "v1"}
@@ -1052,8 +1042,8 @@
                             :source-path "/test/(?<version>v[0-9]+).md"}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
-            (is (= 1 (count (:path-specs @path-captures))))
-            (let [spec (first (:path-specs @path-captures))]
+            (is (= 1 (count (:path-specs (:path-captures @system)))))
+            (let [spec (first (:path-specs (:path-captures @system)))]
               (is (= "/test/(?<version>v[0-9]+).md" (:path spec)))
               (is (= #{"v1"} (:version (:captures spec))))))
           (finally
@@ -1068,10 +1058,9 @@
         (spit file1 "content1")
         (spit file2 "content2")
         (try
-          (let [path-captures (atom {:path-specs []})
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :path-captures path-captures}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)
+                              :path-captures {:path-specs []}})
                 file-maps [{:file file1
                             :path (.getPath file1)
                             :metadata {:version "v1"}
@@ -1086,8 +1075,8 @@
                             :source-path "/test/(?<version>v[0-9]+).md"}]
                 result (sut/ingest-files system file-maps)]
             (is (= 2 (:ingested result)))
-            (is (= 1 (count (:path-specs @path-captures))))
-            (let [spec (first (:path-specs @path-captures))]
+            (is (= 1 (count (:path-specs (:path-captures @system)))))
+            (let [spec (first (:path-specs (:path-captures @system)))]
               (is (= "/test/(?<version>v[0-9]+).md" (:path spec)))
               (is (= #{"v1" "v2"} (:version (:captures spec))))))
           (finally
@@ -1102,10 +1091,9 @@
         (.mkdirs subdir)
         (spit file1 "content")
         (try
-          (let [path-captures (atom {:path-specs []})
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :path-captures path-captures}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)
+                              :path-captures {:path-specs []}})
                 file-maps [{:file file1
                             :path (.getPath file1)
                             :metadata {:lang "clj" :ver "v1" :topic "guide"}
@@ -1114,8 +1102,8 @@
                             :source-path "/test/(?<lang>[^/]+)/(?<ver>v[0-9]+)-(?<topic>[^.]+).md"}]
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
-            (is (= 1 (count (:path-specs @path-captures))))
-            (let [spec (first (:path-specs @path-captures))]
+            (is (= 1 (count (:path-specs (:path-captures @system)))))
+            (let [spec (first (:path-specs (:path-captures @system)))]
               (is (= "/test/(?<lang>[^/]+)/(?<ver>v[0-9]+)-(?<topic>[^.]+).md" (:path spec)))
               (is (= #{"clj"} (:lang (:captures spec))))
               (is (= #{"v1"} (:ver (:captures spec))))
@@ -1135,10 +1123,9 @@
         (spit file1 "content1")
         (spit file2 "content2")
         (try
-          (let [path-captures (atom {:path-specs []})
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :path-captures path-captures}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)
+                              :path-captures {:path-specs []}})
                 file-maps [{:file file1
                             :path (.getPath file1)
                             :metadata {:version "v1"}
@@ -1153,9 +1140,9 @@
                             :source-path "/test2/(?<category>[^.]+).md"}]
                 result (sut/ingest-files system file-maps)]
             (is (= 2 (:ingested result)))
-            (is (= 2 (count (:path-specs @path-captures))))
-            (let [spec1 (first (filter #(= "/test1/(?<version>v[0-9]+).md" (:path %)) (:path-specs @path-captures)))
-                  spec2 (first (filter #(= "/test2/(?<category>[^.]+).md" (:path %)) (:path-specs @path-captures)))]
+            (is (= 2 (count (:path-specs (:path-captures @system)))))
+            (let [spec1 (first (filter #(= "/test1/(?<version>v[0-9]+).md" (:path %)) (:path-specs (:path-captures @system))))
+                  spec2 (first (filter #(= "/test2/(?<category>[^.]+).md" (:path %)) (:path-specs (:path-captures @system))))]
               (is (some? spec1))
               (is (some? spec2))
               (is (= #{"v1"} (:version (:captures spec1))))
@@ -1172,10 +1159,9 @@
         (.mkdirs test-dir)
         (spit file1 "content")
         (try
-          (let [path-captures (atom {:path-specs []})
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :path-captures path-captures}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)
+                              :path-captures {:path-specs []}})
                 file-maps [{:file file1
                             :path (.getPath file1)
                             :metadata {}
@@ -1185,7 +1171,7 @@
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             ;; No path specs should be added since there are no captures
-            (is (= 0 (count (:path-specs @path-captures)))))
+            (is (= 0 (count (:path-specs (:path-captures @system))))))
           (finally
             (.delete file1)
             (.delete test-dir)))))))
@@ -1216,10 +1202,9 @@
                      :metadata enhanced-metadata}))
                 lines)))
 
-          (let [metadata-values (atom {})
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :metadata-values metadata-values}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)
+                              :metadata-values {}})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {:source "test"}
@@ -1228,8 +1213,8 @@
             (is (= 1 (:ingested result)))
             (is (= 0 (:failed result)))
             ;; Verify metadata from all segments was tracked
-            (is (= #{0 1 2} (:line-num @metadata-values)))
-            (is (= #{"test"} (:source @metadata-values))))
+            (is (= #{0 1 2} (:line-num (:metadata-values @system))))
+            (is (= #{"test"} (:source (:metadata-values @system)))))
 
           ;; Remove the test method
           (remove-method common/process-document :test-multi-segment)
@@ -1261,10 +1246,9 @@
                      :metadata enhanced-metadata}))
                 lines)))
 
-          (let [metadata-values (atom {})
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :metadata-values metadata-values}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)
+                              :metadata-values {}})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
@@ -1272,7 +1256,7 @@
                 result (sut/ingest-files system file-maps)]
             (is (= 1 (:ingested result)))
             ;; Both segment types should be tracked
-            (is (= #{"even" "odd"} (:segment-type @metadata-values))))
+            (is (= #{"even" "odd"} (:segment-type (:metadata-values @system)))))
 
           (remove-method common/process-document :test-varying-metadata)
           (finally
@@ -1292,8 +1276,8 @@
               ;; Missing :segment-id, :text-to-embed, :content-to-store, :metadata
               }])
 
-          (let [system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)}
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
@@ -1439,3 +1423,131 @@
             _result (#'sut/update-stats-map current-stats "/test/*" stats-update timestamp)]
         (is (= 0 (get-in current-stats [:sources 0 :files-matched])))
         (is (= original-sources (:sources current-stats)))))))
+
+(deftest classpath-resource-discovery-test
+  ;; Test classpath resource enumeration and ingestion
+  (testing "classpath resource discovery"
+
+    (testing "enumerates classpath resources with literal path"
+      (let [path-spec {:segments [{:type :literal :value "classpath_test/docs/api/auth.md"}]
+                       :base-path "classpath_test/docs/api/auth.md"
+                       :source-type :classpath
+                       :ingest :whole-document}
+            results (sut/files-from-path-spec path-spec)]
+        (is (= 1 (count results)))
+        (is (= "classpath_test/docs/api/auth.md" (:path (first results))))
+        (is (nil? (:file (first results))))))
+
+    (testing "matches single-level glob in classpath"
+      (let [path-spec {:segments [{:type :literal :value "classpath_test/docs/api/"}
+                                  {:type :glob :pattern "*"}
+                                  {:type :literal :value ".md"}]
+                       :base-path "classpath_test/docs/api/"
+                       :source-type :classpath
+                       :ingest :whole-document}
+            results (sut/files-from-path-spec path-spec)
+            paths (set (map :path results))]
+        (is (= 2 (count results)))
+        (is (contains? paths "classpath_test/docs/api/auth.md"))
+        (is (contains? paths "classpath_test/docs/api/users.md"))))
+
+    (testing "matches recursive glob in classpath"
+      (let [path-spec {:segments [{:type :literal :value "classpath_test/docs/"}
+                                  {:type :glob :pattern "**"}
+                                  {:type :literal :value ".md"}]
+                       :base-path "classpath_test/docs/"
+                       :source-type :classpath
+                       :ingest :whole-document}
+            results (sut/files-from-path-spec path-spec)
+            paths (set (map :path results))]
+        (is (= 3 (count results)))
+        (is (contains? paths "classpath_test/docs/api/auth.md"))
+        (is (contains? paths "classpath_test/docs/api/users.md"))
+        (is (contains? paths "classpath_test/docs/guides/quickstart.md"))))
+
+    (testing "extracts captures from classpath paths"
+      (let [path-spec {:segments [{:type :literal :value "classpath_test/docs/"}
+                                  {:type :capture :name "category" :pattern "[^/]+"}
+                                  {:type :literal :value "/"}
+                                  {:type :capture :name "name" :pattern "[^.]+"}
+                                  {:type :literal :value ".md"}]
+                       :base-path "classpath_test/docs/"
+                       :source-type :classpath
+                       :ingest :whole-document}
+            results (sut/files-from-path-spec path-spec)
+            by-path (into {} (map (fn [r] [(:path r) r]) results))]
+        (is (= 3 (count results)))
+        (is (= "api" (get-in by-path ["classpath_test/docs/api/auth.md" :captures :category])))
+        (is (= "auth" (get-in by-path ["classpath_test/docs/api/auth.md" :captures :name])))
+        (is (= "guides" (get-in by-path ["classpath_test/docs/guides/quickstart.md" :captures :category])))
+        (is (= "quickstart" (get-in by-path ["classpath_test/docs/guides/quickstart.md" :captures :name])))))
+
+    (testing "merges captures with base metadata for classpath"
+      (let [path-spec {:segments [{:type :literal :value "classpath_test/docs/"}
+                                  {:type :capture :name "category" :pattern "[^/]+"}
+                                  {:type :literal :value "/"}
+                                  {:type :glob :pattern "*"}
+                                  {:type :literal :value ".md"}]
+                       :base-path "classpath_test/docs/"
+                       :base-metadata {:source "docs" :type "guide"}
+                       :source-type :classpath
+                       :ingest :whole-document}
+            results (sut/files-from-path-spec path-spec)]
+        (is (= 3 (count results)))
+        (doseq [result results]
+          (is (= "docs" (get-in result [:metadata :source])))
+          (is (= "guide" (get-in result [:metadata :type])))
+          (is (contains? #{"api" "guides"} (get-in result [:metadata :category]))))))
+
+    (testing "ingests classpath resource into embedding store"
+      (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                    :embedding-store (InMemoryEmbeddingStore.)})
+            file-maps [{:file nil
+                        :path "classpath_test/docs/api/auth.md"
+                        :metadata {:category "api"}
+                        :ingest :whole-document}]
+            result (sut/ingest-files system file-maps)]
+        (is (= 1 (:ingested result)))
+        (is (= 0 (:failed result)))
+        (is (empty? (:failures result)))))
+
+    (testing "handles mixed filesystem and classpath sources"
+      (let [test-dir (io/file "test/mcp_vector_search/test-resources/ingest_test/mixed")
+            test-file (io/file test-dir "fs.txt")]
+        (.mkdirs test-dir)
+        (spit test-file "filesystem content")
+        (try
+          (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                        :embedding-store (InMemoryEmbeddingStore.)})
+                config {:path-specs
+                        [{:segments [{:type :literal :value (.getPath test-file)}]
+                          :base-path (.getPath test-file)
+                          :source-type :filesystem
+                          :ingest :whole-document}
+                         {:segments [{:type :literal :value "classpath_test/docs/api/auth.md"}]
+                          :base-path "classpath_test/docs/api/auth.md"
+                          :source-type :classpath
+                          :ingest :whole-document}]}
+                result (sut/ingest system config)]
+            (is (= 2 (:ingested result)))
+            (is (= 0 (:failed result))))
+          (finally
+            (.delete test-file)
+            (.delete test-dir)))))
+
+    (testing "validates classpath resource readability"
+      (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                    :embedding-store (InMemoryEmbeddingStore.)})
+            file-maps [{:file nil
+                        :path "nonexistent/path.md"
+                        :metadata {:category "test"}
+                        :ingest :whole-document
+                        :source-path "nonexistent/path.md"}]
+            result (sut/ingest-files system file-maps)]
+        (is (= 0 (:ingested result)))
+        (is (= 1 (:failed result)))
+        (is (= 1 (count (:failures result))))
+        (let [failure (first (:failures result))]
+          (is (= :read-error (:error-type failure)))
+          (is (str/includes? (:error failure) "Classpath resource not found"))
+          (is (str/includes? (:error failure) "nonexistent/path.md")))))))

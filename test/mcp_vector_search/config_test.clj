@@ -4,27 +4,38 @@
     [clojure.test :refer [deftest testing is]]
     [mcp-vector-search.config :as sut]))
 
-(deftest read-test
-  ;; Test reading EDN configuration files
-  (testing "read"
-    (testing "parses valid EDN file"
-      (let [test-file (io/file "test/mcp_vector_search/test-resources/config_test/valid.edn")]
+(deftest load-config-test
+  ;; Test loading EDN configuration files from filesystem and classpath
+  (testing "load-config"
+    (testing "loads from explicit filesystem path"
+      (let [test-file (io/file "test/mcp_vector_search/test-resources/config_test/explicit.edn")]
         (.mkdirs (.getParentFile test-file))
-        (spit test-file "{:foo \"bar\" :baz 42}")
+        (spit test-file "{:sources [{:path \"/docs/*.md\"}]}")
         (try
-          (let [result (sut/read (.getPath test-file))]
+          (let [result (sut/load-config (.getPath test-file))]
             (is (map? result))
-            (is (= "bar" (:foo result)))
-            (is (= 42 (:baz result))))
+            (is (= [{:path "/docs/*.md"}] (:sources result))))
           (finally
             (.delete test-file)))))
+
+    (testing "loads from default locations when no explicit path provided"
+      ;; When using default path, function searches classpath then filesystem
+      ;; In this test environment, project config exists so it will be found
+      (let [result (sut/load-config)]
+        (is (map? result))
+        (is (some? (:description result)))
+        (is (vector? (:sources result)))))
+
+    (testing "throws when config not found"
+      (is (thrown-with-msg? Exception #"No configuration file found"
+                            (sut/load-config "/nonexistent/config.edn"))))
 
     (testing "handles nested structures"
       (let [test-file (io/file "test/mcp_vector_search/test-resources/config_test/nested.edn")]
         (.mkdirs (.getParentFile test-file))
         (spit test-file "{:outer {:inner {:value 123}}}")
         (try
-          (let [result (sut/read (.getPath test-file))]
+          (let [result (sut/load-config (.getPath test-file))]
             (is (= 123 (get-in result [:outer :inner :value]))))
           (finally
             (.delete test-file)))))))
@@ -205,4 +216,45 @@
               result (sut/process-config config)]
           (is (= {:category "docs"} (get-in result [:path-specs 0 :base-metadata])))
           (is (nil? (get-in result [:path-specs 0 :base-metadata :embedding])))
-          (is (nil? (get-in result [:path-specs 0 :base-metadata :content-strategy]))))))))
+          (is (nil? (get-in result [:path-specs 0 :base-metadata :content-strategy]))))))
+
+    (testing "source validation"
+      (testing "rejects sources with both :path and :class-path"
+        (let [config {:sources [{:path "/docs/*.md"
+                                 :class-path "docs/*.md"}]}]
+          (is (thrown-with-msg? Exception #"cannot have both :path and :class-path"
+                                (sut/process-config config)))))
+
+      (testing "rejects sources with neither :path nor :class-path"
+        (let [config {:sources [{:name "Test"}]}]
+          (is (thrown-with-msg? Exception #"must have either :path or :class-path"
+                                (sut/process-config config)))))
+
+      (testing "accepts :class-path sources"
+        (let [config {:sources [{:class-path "docs/*.md"}]}
+              result (sut/process-config config)]
+          (is (= 1 (count (:path-specs result))))
+          (is (= :classpath (get-in result [:path-specs 0 :source-type])))))))
+
+    (testing ":source-type assignment"
+      (testing "assigns :filesystem for :path sources"
+        (let [config {:sources [{:path "/docs/*.md"}]}
+              result (sut/process-config config)]
+          (is (= :filesystem (get-in result [:path-specs 0 :source-type])))))
+
+      (testing "assigns :classpath for :class-path sources"
+        (let [config {:sources [{:class-path "docs/*.md"}]}
+              result (sut/process-config config)]
+          (is (= :classpath (get-in result [:path-specs 0 :source-type])))))))
+
+    (testing "mixed filesystem and classpath sources"
+      (let [config {:sources [{:path "/local/docs/*.md"
+                               :name "Local"}
+                              {:class-path "embedded/docs/*.md"
+                               :name "Embedded"}]}
+            result (sut/process-config config)]
+        (is (= 2 (count (:path-specs result))))
+        (is (= :filesystem (get-in result [:path-specs 0 :source-type])))
+        (is (= :classpath (get-in result [:path-specs 1 :source-type])))
+        (is (= "Local" (get-in result [:path-specs 0 :base-metadata :name])))
+        (is (= "Embedded" (get-in result [:path-specs 1 :base-metadata :name])))))

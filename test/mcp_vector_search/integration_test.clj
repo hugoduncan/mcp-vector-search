@@ -36,8 +36,8 @@
                 processed-config (config/process-config user-config)
 
                 ;; Create system and ingest
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)}
+                system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)})
 
                 ingest-result (ingest/ingest system processed-config)]
 
@@ -89,8 +89,8 @@
 
                 processed-config (config/process-config user-config)
 
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)}
+                system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)})
 
                 ingest-result (ingest/ingest system processed-config)]
 
@@ -147,9 +147,9 @@
 
                 processed-config (config/process-config user-config)
 
-                system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)
-                        :metadata-values (atom {})}
+                system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                              :embedding-store (InMemoryEmbeddingStore.)
+                              :metadata-values {}})
 
                 ingest-result (ingest/ingest system processed-config)]
 
@@ -158,8 +158,8 @@
             (is (= 0 (:failed ingest-result)))
 
             ;; Verify metadata was captured from path segments
-            (is (= #{"v1" "v2"} (:version @(:metadata-values system))))
-            (is (= #{"guides"} (:type @(:metadata-values system))))
+            (is (= #{"v1" "v2"} (:version (:metadata-values @system))))
+            (is (= #{"guides"} (:type (:metadata-values @system))))
 
             ;; Verify search tool has dynamic schema with captured metadata
             (let [search-tool (tools/search-tool system processed-config)

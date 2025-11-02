@@ -76,10 +76,9 @@
 
 (defn- build-metadata-schema
   "Build JSON schema for metadata parameter based on discovered metadata values.
-  Takes a metadata-values atom containing {field-key #{values...}}, or nil.
+  Takes a metadata-values map containing {field-key #{values...}}, or nil.
   Returns a schema map with properties for each field with enum constraints."
-  [metadata-values-atom]
-  (let [metadata-values (when metadata-values-atom @metadata-values-atom)]
+  [metadata-values]
     (if (empty? metadata-values)
       {:type "object"
        :description "Metadata filters as key-value pairs to match documents"
@@ -91,18 +90,17 @@
                                 [(name k) {:type "string"
                                            :enum (vec (sort values))}])
                               metadata-values))
-       :additionalProperties false})))
+       :additionalProperties false}))
 
 (defn search-tool
   "Create a search tool specification for the MCP server.
 
-  Takes a system map with :embedding-model, :embedding-store,
-  and :metadata-values.
-
+  Takes a system atom with :embedding-model, :embedding-store, and :metadata-values.
   Takes a config map with :description for the tool description.
   Returns a tool specification map."
-  [system config]
-  (let [metadata-schema (build-metadata-schema (:metadata-values system))]
+  [system-atom config]
+  (let [system-map @system-atom
+        metadata-schema (build-metadata-schema (:metadata-values system-map))]
     {:name           "search"
      :description    (:description config)
      :inputSchema    {:type     "object"
@@ -119,8 +117,9 @@
                        (try
                          (when (and context (:server context))
                            (logging/info context {:query query}))
-                         (let [{:keys [embedding-model embedding-store]}
-                               system
+                         (let [current-system @system-atom
+                               {:keys [embedding-model embedding-store]}
+                               current-system
                                max-results     (or limit 10)
                                query-embedding (embed-query
                                                  embedding-model

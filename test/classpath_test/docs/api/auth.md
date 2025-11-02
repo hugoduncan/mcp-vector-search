@@ -1,0 +1,3 @@
+# Authentication API
+
+User authentication

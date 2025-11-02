@@ -77,6 +77,7 @@ mcp-vector-search is an MCP server that:
 - **Provides a search tool** to AI assistants via the Model Context Protocol
 - **Enables semantic search** - find content by meaning, not just keywords
 - **Filters by metadata** - narrow searches to specific projects, categories, or file types
+- **Works as a library** - embed in your own MCP servers with bundled documentation
 
 ### Why Use It
 
@@ -93,8 +94,11 @@ mcp-vector-search is an MCP server that:
 - Multi-project codebases (find patterns across projects)
 - Historical context (design docs, decision logs)
 - API references (look up functions and examples as needed)
+- Custom MCP servers needing semantic search over bundled documentation
 
 See [doc/about.md](doc/about.md) for a detailed explanation of the problem and solution.
+
+**Library usage**: mcp-vector-search can be embedded in your own MCP servers to provide semantic search over bundled resources. See [doc/library-usage.md](doc/library-usage.md) for details.
 
 ## Installation
 
@@ -408,6 +412,7 @@ Contributions welcome! Please:
 - **[doc/about.md](doc/about.md)** - Project purpose, problem/solution, use cases
 - **[doc/install.md](doc/install.md)** - Detailed installation for various MCP clients
 - **[doc/using.md](doc/using.md)** - Complete configuration reference, strategies, troubleshooting
+- **[doc/library-usage.md](doc/library-usage.md)** - Using mcp-vector-search as a library in custom MCP servers
 - **[doc/path-spec.md](doc/path-spec.md)** - Formal path specification syntax and grammar
 
 ## License

@@ -51,6 +51,8 @@
       EmbeddingStore)
     (dev.langchain4j.store.embedding.inmemory
       InMemoryEmbeddingStore)
+    (io.github.classgraph
+      ClassGraph)
     (java.io
       File
       IOException)
@@ -59,34 +61,6 @@
     (java.util.regex
       Matcher
       Pattern)))
-
-(defn- build-pattern
-  "Build a regex pattern from segments with named groups."
-  [segments]
-  (let [pattern-str
-        (str/join
-          (mapv
-            (fn [{:keys [type] :as segment}]
-              (case type
-                :literal (Pattern/quote (:value segment))
-                :glob    (case (:pattern segment)
-                           "**" ".*?"
-                           "*"  "[^/]*")
-                :capture (str "(?<" (:name segment) ">" (:pattern segment) ")")))
-            segments))]
-    (Pattern/compile pattern-str)))
-
-(defn- extract-captures
-  "Extract named group captures from a regex matcher.
-  Returns a map of capture name to captured value."
-  [^Matcher matcher segments]
-  (let [capture-names (keep #(when (= :capture (:type %))
-                               (:name %))
-                            segments)]
-    (into {}
-          (map (fn [^String name]
-                 [(keyword name) (.group matcher name)])
-               capture-names))))
 
 (defn- walk-files
   "Walk directory tree and return all files."
@@ -97,7 +71,63 @@
       (fn [^File f] (seq (.listFiles f)))
       dir)))
 
-(defn files-from-path-spec
+(defn- parent-directory
+  "Extract the parent directory from a path.
+  Returns the path up to the last slash, or the entire path if no slash is found.
+  Returns nil for blank paths."
+  [path]
+  (when-not (str/blank? path)
+    (let [last-slash (.lastIndexOf ^String path "/")]
+      (if (pos? last-slash)
+        (subs path 0 last-slash)
+        path))))
+
+(defn- files-from-classpath-spec
+  "Apply a path spec to classpath resources and return matching resources with metadata.
+
+  Takes a path spec map with:
+  - :segments - parsed segment structure
+  - :base-path - path prefix for filtering resources
+  - :base-metadata (optional) - metadata to merge with captures
+  - :ingest - processing strategy
+  - :path (optional) - original path string for tracking
+
+  Returns a sequence of maps:
+  - :file - nil (no File object for classpath resources)
+  - :path - resource path string
+  - :captures - map of captured values
+  - :metadata - merged base metadata and captures
+  - :ingest - processing strategy
+  - :source-path - original path spec string for statistics tracking"
+  [{:keys [segments base-path base-metadata ingest path] :as _path-spec}]
+  (let [pattern (util/build-pattern segments)
+        ;; ClassGraph's acceptPaths requires directory paths, not file paths
+        dir-prefix (parent-directory base-path)
+        class-graph (ClassGraph.)
+        scan-result (-> (if dir-prefix
+                          (.acceptPaths class-graph (into-array String [dir-prefix]))
+                          class-graph)
+                       (.scan))
+        resources (.getAllResources scan-result)]
+    (try
+      (let [result (into []
+                         (keep (fn [resource]
+                                 (let [resource-path (.getPath resource)
+                                       matcher (re-matcher pattern resource-path)]
+                                   (when (.matches matcher)
+                                     (let [captures (util/extract-captures matcher segments)]
+                                       {:file        nil  ; No File object for classpath resources
+                                        :path        resource-path
+                                        :captures    captures
+                                        :metadata    (merge base-metadata captures)
+                                        :ingest      ingest
+                                        :source-path path})))))
+                               resources)]
+        result)
+      (finally
+        (.close scan-result)))))
+
+(defn- files-from-filesystem-spec
   "Apply a path spec to the filesystem and return matching files with metadata.
 
   Takes a path spec map with:
@@ -134,7 +164,7 @@
                                                                        (str normalized-base "/")
                                                                        normalized-base)}]
                                              remaining))))
-        pattern (build-pattern normalized-segments)]
+        pattern (util/build-pattern normalized-segments)]
     (if (.isFile base-file)
       ;; Literal file path
       (let [file-path (util/normalize-file-path base-file)]
@@ -154,7 +184,7 @@
                       (let [file-path (util/normalize-file-path file)
                             matcher   (re-matcher pattern file-path)]
                         (when (.matches matcher)
-                          (let [captures (extract-captures matcher normalized-segments)]
+                          (let [captures (util/extract-captures matcher normalized-segments)]
                             {:file        file
                              :path        file-path
                              :captures    captures
@@ -162,6 +192,27 @@
                              :ingest      ingest
                              :source-path path}))))
                     files))))))
+
+(defn files-from-path-spec
+  "Apply a path spec and return matching files/resources with metadata.
+
+  Dispatches to filesystem or classpath implementation based on :source-type.
+
+  Takes a path spec map with:
+  - :source-type - :filesystem or :classpath
+  - :segments - parsed segment structure
+  - :base-path - starting directory for filesystem walk or path prefix for classpath
+  - :base-metadata (optional) - metadata to merge with captures
+  - :ingest - processing strategy
+  - :path (optional) - original path string for tracking
+
+  Returns a sequence of maps with :file, :path, :captures, :metadata, :ingest, :source-path"
+  [{:keys [source-type] :as path-spec}]
+  (case source-type
+    :filesystem (files-from-filesystem-spec path-spec)
+    :classpath  (files-from-classpath-spec path-spec)
+    ;; Default to filesystem for backward compatibility
+    (files-from-filesystem-spec path-spec)))
 
 (defn- record-metadata-values
   "Record metadata field values in the system atom.
@@ -321,109 +372,61 @@
   segment)
 
 (defn ingest-file
-  "Ingest a single file into the embedding store.
+  "Ingest a single file or classpath resource into the embedding store.
 
-  Takes either:
-  - A system map with :embedding-model and :embedding-store (for backward compatibility)
-  - A system map plus an optional system-atom parameter for state tracking
-
-  And a file map from files-from-path-spec with :file, :path, :metadata,
+  Takes a system atom containing :embedding-model and :embedding-store,
+  and a file map from files-from-path-spec with :file, :path, :metadata,
   :ingest strategy, :source-path, and :captures keys.
+  For classpath resources, :file will be nil and :path contains the resource path.
 
   Returns the file map on success, or the file map with :error and :error-type
-  keys on failure. Updates state (metadata, failures, captures) in the system atom if provided."
-  ([system file-map]
-   (ingest-file system nil file-map))
-  ([system system-atom {:keys [file path metadata ingest source-path captures] :as file-map}]
-   (let [{:keys [embedding-model embedding-store]} system]
-     (try
-       (let [content (slurp file)
-             ;; Process document to get segment descriptors
-             segment-descriptors (common/process-document ingest path content metadata)]
-         ;; Validate all segment descriptors
-         (doseq [descriptor segment-descriptors]
-           (validate-segment descriptor))
-         ;; Create embeddings and store segments
-         (doseq [{:keys [file-id text-to-embed content-to-store metadata]} segment-descriptors]
-           (let [lc4j-metadata (common/build-lc4j-metadata metadata)
-                 response (.embed ^EmbeddingModel embedding-model text-to-embed)
-                 embedding (.content ^dev.langchain4j.model.output.Response response)
-                 storage-segment (TextSegment/from content-to-store lc4j-metadata)]
-             (.add ^InMemoryEmbeddingStore embedding-store file-id embedding storage-segment)))
-         ;; Track metadata from all segment descriptors
-         (cond
-           ;; New pattern: system-atom provided
-           system-atom
-           (doseq [descriptor segment-descriptors]
-             (record-metadata-values system-atom (:metadata descriptor)))
-           ;; Old pattern: metadata-values is atom in system map
-           (instance? clojure.lang.Atom (:metadata-values system))
-           (doseq [descriptor segment-descriptors]
-             (swap! (:metadata-values system)
-                    (fn [current]
-                      (reduce (fn [acc [k v]]
-                                (update acc k (fnil conj #{}) v))
-                              current
-                              (:metadata descriptor))))))
-         ;; Track path captures
-         (cond
-           ;; New pattern: system-atom provided
-           system-atom
-           (record-path-captures system-atom source-path captures)
-           ;; Old pattern: path-captures is atom in system map
-           (and (instance? clojure.lang.Atom (:path-captures system))
-                (seq captures))
-           (let [path-captures-atom (:path-captures system)
-                 path-spec-path source-path]
-             (swap! path-captures-atom
-                    (fn [current]
-                      (let [existing-specs (:path-specs current)
-                            existing-spec (first (filter #(= (:path %) path-spec-path) existing-specs))]
-                        (if existing-spec
-                          ;; Update existing path spec's captures
-                          (update current :path-specs
-                                  (fn [specs]
-                                    (mapv (fn [spec]
-                                            (if (= (:path spec) path-spec-path)
-                                              (update spec :captures
-                                                      (fn [current-captures]
-                                                        (reduce (fn [acc [k v]]
-                                                                  (update acc k (fnil conj #{}) v))
-                                                                (or current-captures {})
-                                                                captures)))
-                                              spec))
-                                          specs)))
-                          ;; Add new path spec
-                          (update current :path-specs
-                                  conj
-                                  {:path path-spec-path
-                                   :captures (into {} (map (fn [[k v]] [k #{v}]) captures))})))))))
-         ;; Record success statistics
-         (assoc file-map :segment-count (count segment-descriptors)))
-       (catch Exception e
-         (let [error-type (classify-error-type e)
-               error-msg (.getMessage e)
-               error-record {:file-path    path
-                            :error-type   error-type
-                            :message      error-msg
-                            :source-path  source-path
-                            :timestamp    (Instant/now)}]
-           ;; Record error in failures queue
-           (cond
-             ;; New pattern: system-atom provided
-             system-atom
-             (add-error-to-queue system-atom error-record)
-             ;; Old pattern: ingestion-failures is atom in system map
-             (instance? clojure.lang.Atom (:ingestion-failures system))
-             (swap! (:ingestion-failures system)
-                    (fn [queue]
-                      (let [new-queue (conj queue error-record)]
-                        (if (> (count new-queue) max-error-queue-size)
-                          (vec (rest new-queue))
-                          new-queue)))))
-           (assoc file-map
-                  :error error-msg
-                  :error-type error-type)))))))
+  keys on failure. Updates state (metadata, failures, captures) in the system atom."
+  [system-atom {:keys [file path metadata ingest source-path captures] :as file-map}]
+  (let [{:keys [embedding-model embedding-store]} @system-atom]
+    (try
+      (let [content (if file
+                      ;; Filesystem resource
+                      (slurp file)
+                      ;; Classpath resource
+                      (let [resource-url (io/resource path)]
+                        (when-not resource-url
+                          (throw (ex-info (str "Classpath resource not found: " path)
+                                         {:type :read-error
+                                          :path path
+                                          :source-path source-path})))
+                        (slurp resource-url)))
+            ;; Process document to get segment descriptors
+            segment-descriptors (common/process-document ingest path content metadata)]
+        ;; Validate all segment descriptors
+        (doseq [descriptor segment-descriptors]
+          (validate-segment descriptor))
+        ;; Create embeddings and store segments
+        (doseq [{:keys [file-id text-to-embed content-to-store metadata]} segment-descriptors]
+          (let [lc4j-metadata (common/build-lc4j-metadata metadata)
+                response (.embed ^EmbeddingModel embedding-model text-to-embed)
+                embedding (.content ^dev.langchain4j.model.output.Response response)
+                storage-segment (TextSegment/from content-to-store lc4j-metadata)]
+            (.add ^InMemoryEmbeddingStore embedding-store file-id embedding storage-segment)))
+        ;; Track metadata from all segment descriptors
+        (doseq [descriptor segment-descriptors]
+          (record-metadata-values system-atom (:metadata descriptor)))
+        ;; Track path captures
+        (record-path-captures system-atom source-path captures)
+        ;; Record success statistics
+        (assoc file-map :segment-count (count segment-descriptors)))
+      (catch Exception e
+        (let [error-type (classify-error-type e)
+              error-msg (.getMessage e)
+              error-record {:file-path    path
+                           :error-type   error-type
+                           :message      error-msg
+                           :source-path  source-path
+                           :timestamp    (Instant/now)}]
+          ;; Record error in failures queue
+          (add-error-to-queue system-atom error-record)
+          (assoc file-map
+                 :error error-msg
+                 :error-type error-type))))))
 
 (defn- log-if-server
   "Log a message if server is available in the system."
@@ -438,28 +441,26 @@
 (defn ingest-files
   "Ingest a sequence of files from path-spec results.
 
-  Takes a system map (or system atom) and a sequence of file maps from
-  files-from-path-spec. Updates ingestion statistics for each source-path.
+  Takes a system atom and a sequence of file maps from files-from-path-spec.
+  Updates ingestion statistics for each source-path.
   Returns a map with :ingested count, :failed count, and :failures sequence."
-  [system file-maps]
-  (let [system-atom (when (instance? clojure.lang.Atom system) system)
-        system-map (if system-atom @system-atom system)
-        results (map #(ingest-file system-map system-atom %) file-maps)
+  [system-atom file-maps]
+  (let [system-map @system-atom
+        results (map #(ingest-file system-atom %) file-maps)
         successes (filter (complement :error) results)
         failures (filter :error results)
         ;; Group results by source-path for statistics updates
         by-source (group-by :source-path results)]
     ;; Update statistics for each source
-    (when system-atom
-      (doseq [[source-path source-results] by-source]
-        (let [source-successes (filter (complement :error) source-results)
-              source-failures (filter :error source-results)
-              total-segments (reduce + 0 (map #(or (:segment-count %) 0) source-successes))]
-          (update-ingestion-stats system-atom source-path
-                                  {:files-matched (count source-results)
-                                   :files-processed (count source-successes)
-                                   :segments-created total-segments
-                                   :errors (count source-failures)}))))
+    (doseq [[source-path source-results] by-source]
+      (let [source-successes (filter (complement :error) source-results)
+            source-failures (filter :error source-results)
+            total-segments (reduce + 0 (map #(or (:segment-count %) 0) source-successes))]
+        (update-ingestion-stats system-atom source-path
+                                {:files-matched (count source-results)
+                                 :files-processed (count source-successes)
+                                 :segments-created total-segments
+                                 :errors (count source-failures)})))
     ;; Log failures and completion
     (when (seq failures)
       (doseq [failure failures]
@@ -476,39 +477,38 @@
 (defn ingest
   "Ingest documents into the vector search system.
 
-  Takes a system atom (or map) with :embedding-model and :embedding-store,
+  Takes a system atom with :embedding-model and :embedding-store,
   and a parsed-config map with :path-specs (a sequence of path spec maps).
 
   Initializes per-source statistics in the system atom before ingestion.
   Returns ingestion statistics map with :ingested, :failed, and :failures."
-  [system {:keys [path-specs] :as _parsed-config}]
+  [system-atom {:keys [path-specs] :as _parsed-config}]
   ;; Initialize per-source statistics in system atom if not already present
-  (when (instance? clojure.lang.Atom system)
-    (swap! system
-           (fn [current]
-             (let [existing-sources (set (map :path (get-in current [:ingestion-stats :sources])))
-                   current-count (count (get-in current [:ingestion-stats :sources]))
-                   new-sources (remove #(existing-sources (:path %))
-                                       (map (fn [spec]
-                                              {:path (:path spec)
-                                               :files-matched 0
-                                               :files-processed 0
-                                               :segments-created 0
-                                               :errors 0})
-                                            path-specs))
-                   available-slots (- max-sources-tracked current-count)
-                   sources-to-add (if (pos? available-slots)
-                                    (take available-slots new-sources)
-                                    [])]
-               (when (< (count sources-to-add) (count new-sources))
-                 (log-if-server
-                   current
-                   :warn
-                   {:event "sources-limit-reached"
-                    :max-sources max-sources-tracked
-                    :current-count current-count
-                    :attempted-to-add (count new-sources)
-                    :actually-added (count sources-to-add)}))
-               (update-in current [:ingestion-stats :sources] concat sources-to-add)))))
+  (swap! system-atom
+         (fn [current]
+           (let [existing-sources (set (map :path (get-in current [:ingestion-stats :sources])))
+                 current-count (count (get-in current [:ingestion-stats :sources]))
+                 new-sources (remove #(existing-sources (:path %))
+                                     (map (fn [spec]
+                                            {:path (:path spec)
+                                             :files-matched 0
+                                             :files-processed 0
+                                             :segments-created 0
+                                             :errors 0})
+                                          path-specs))
+                 available-slots (- max-sources-tracked current-count)
+                 sources-to-add (if (pos? available-slots)
+                                  (take available-slots new-sources)
+                                  [])]
+             (when (< (count sources-to-add) (count new-sources))
+               (log-if-server
+                 current
+                 :warn
+                 {:event "sources-limit-reached"
+                  :max-sources max-sources-tracked
+                  :current-count current-count
+                  :attempted-to-add (count new-sources)
+                  :actually-added (count sources-to-add)}))
+             (update-in current [:ingestion-stats :sources] concat sources-to-add))))
   (let [all-files (mapcat files-from-path-spec path-specs)]
-    (ingest-files system all-files)))
+    (ingest-files system-atom all-files)))

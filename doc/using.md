@@ -36,12 +36,31 @@ The server reads the configuration file at startup and indexes all specified sou
 
 ## Path Specifications
 
-Path specs define which files to index and support:
-- **Literal paths**: `/docs/README.md`
+Path specs define which files to index and support two source types:
+- **Filesystem sources**: Use `:path` key (absolute paths with leading `/`)
+- **Classpath sources**: Use `:class-path` key (relative paths without leading `/`)
+
+All path specs support:
+- **Literal paths**: Direct file or directory references
 - **Globs**: `*` (single level), `**` (recursive)
 - **Named captures**: `(?<name>regex)` - extracted as metadata
 
-### Path Spec Examples
+### Filesystem vs Classpath Sources
+
+**Filesystem sources** (`:path`):
+- Use absolute paths with leading `/`
+- Support file watching for automatic re-indexing
+- Files are read from the filesystem
+
+**Classpath sources** (`:class-path`):
+- Use relative paths without leading `/`
+- File watching is not available (classpath resources are read-only)
+- Resources are discovered from the classpath (JARs, resource directories)
+- Useful when embedding mcp-vector-search as a library
+
+Sources must specify exactly one of `:path` or `:class-path`.
+
+### Filesystem Path Spec Examples
 
 ```clojure
 ;; All markdown files recursively
@@ -60,11 +79,50 @@ Path specs define which files to index and support:
 {:path "/docs/README.md"}
 ```
 
+### Classpath Path Spec Examples
+
+```clojure
+;; All markdown files recursively from classpath
+{:class-path "docs/**/*.md"}
+
+;; Single directory level
+{:class-path "docs/*.md"}
+
+;; Capture directory name as metadata
+{:class-path "docs/(?<category>[^/]+)/*.md"}
+
+;; All resources recursively
+{:class-path "**/*.md"}
+
+;; Specific resource
+{:class-path "docs/README.md"}
+```
+
+### Mixed Filesystem and Classpath Configuration
+
+You can combine both filesystem and classpath sources in the same configuration:
+
+```clojure
+{:sources [
+  ;; Filesystem documentation
+  {:path "/Users/me/docs/**/*.md"
+   :source "local"}
+
+  ;; Bundled library documentation from classpath
+  {:class-path "lib-docs/**/*.md"
+   :source "library"}
+
+  ;; Clojure source from classpath
+  {:class-path "my/app/**/*.clj"
+   :ingest :namespace-doc
+   :source "library-code"}]}
+```
+
 ### Metadata
 
 Metadata comes from two sources:
 
-1. **Base metadata**: Any additional keys in the source map (except `:path`, `:name`, `:ingest`, `:watch?`)
+1. **Base metadata**: Any additional keys in the source map (except `:path`, `:class-path`, `:name`, `:ingest`, `:watch?`)
 2. **Captures**: Values extracted from named groups in the path spec
 
 ```clojure
@@ -77,6 +135,17 @@ For a file `/docs/api/functions.md`:
 - Metadata: `{:project "my-project", :type "documentation", :category "api"}`
 
 The `:name` key, if provided, is also added to metadata.
+
+Classpath sources work identically:
+
+```clojure
+{:sources [{:class-path "docs/(?<category>[^/]+)/*.md"
+            :project "my-library"
+            :type "documentation"}]}
+```
+
+For a classpath resource `docs/api/functions.md`:
+- Metadata: `{:project "my-library", :type "documentation", :category "api"}`
 
 ## Ingest Pipeline Strategies
 
@@ -285,7 +354,9 @@ Enables composing any embedding strategy with any content strategy for single-se
 
 ## File Watching
 
-Enable automatic re-indexing when files change.
+Enable automatic re-indexing when filesystem files change.
+
+**Note**: File watching is only available for filesystem sources (`:path`). Classpath sources (`:class-path`) are read-only and do not support file watching.
 
 ### Global Watch Configuration
 
@@ -295,7 +366,7 @@ Enable automatic re-indexing when files change.
            {:path "/src/**/*.clj"}]}
 ```
 
-All sources will be watched for changes.
+All filesystem sources will be watched for changes. Classpath sources automatically skip watching regardless of the `:watch?` setting.
 
 ### Per-Source Watch Configuration
 
@@ -304,10 +375,11 @@ All sources will be watched for changes.
  :sources [{:path "/docs/**/*.md"
             :watch? true}
            {:path "/archive/**/*.md"
-            :watch? false}]}
+            :watch? false}
+           {:class-path "lib-docs/**/*.md"}]}  ;; Never watched
 ```
 
-Individual source settings override the global `:watch?` flag.
+Individual source settings override the global `:watch?` flag for filesystem sources. Classpath sources are never watched.
 
 ### Watch Behavior
 
@@ -318,6 +390,7 @@ Individual source settings override the global `:watch?` flag.
   - File deleted → remove from index
 - **Path matching**: Only files matching the path spec pattern are processed
 - **Recursive**: Automatically watches subdirectories when using `**` glob
+- **Classpath exclusion**: Sources with `:class-path` automatically skip watch setup
 
 ## Search Tool
 

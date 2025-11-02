@@ -1,0 +1,3 @@
+{:sources [{:path "/test/classpath/docs/*.md"
+            :name "Classpath Test"}]
+ :description "Config loaded from classpath"}

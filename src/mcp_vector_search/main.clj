@@ -23,16 +23,16 @@
   [{:keys [config-path] :or {config-path default-config-path}}]
   (try
     (let [config-path (str config-path)
-          system (lifecycle/start)
-          cfg (config/read config-path)
+          cfg (config/load-config config-path)
           parsed-config (config/process-config cfg)]
 
-      (ingest/ingest system parsed-config)
+      (lifecycle/start)
+      (ingest/ingest lifecycle/system parsed-config)
 
       ;; Start file watches after initial ingest
       (lifecycle/start-watches parsed-config)
 
-      (let [search-tool (tools/search-tool system parsed-config)
+      (let [search-tool (tools/search-tool lifecycle/system parsed-config)
             resource-defs (resources/resource-definitions lifecycle/system)]
         (with-open [server (mcp-server/create-server
                              {:transport {:type :stdio}

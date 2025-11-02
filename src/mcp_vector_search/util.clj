@@ -1,7 +1,11 @@
 (ns mcp-vector-search.util
   "Shared utility functions."
-  (:require [clojure.java.io :as io])
-  (:import [java.io File]))
+  (:require
+    [clojure.java.io :as io]
+    [clojure.string :as str])
+  (:import
+    (java.io File)
+    (java.util.regex Matcher Pattern)))
 
 (defn normalize-file-path
   "Normalize a file path by resolving symlinks to canonical path.
@@ -27,3 +31,31 @@
         (catch Exception _
           path))
       path)))
+
+(defn build-pattern
+  "Build a regex pattern from segments with named groups."
+  [segments]
+  (let [pattern-str
+        (str/join
+          (mapv
+            (fn [{:keys [type] :as segment}]
+              (case type
+                :literal (Pattern/quote (:value segment))
+                :glob    (case (:pattern segment)
+                           "**" ".*?"
+                           "*"  "[^/]*")
+                :capture (str "(?<" (:name segment) ">" (:pattern segment) ")")))
+            segments))]
+    (Pattern/compile pattern-str)))
+
+(defn extract-captures
+  "Extract named group captures from a regex matcher.
+  Returns a map of capture name to captured value."
+  [^Matcher matcher segments]
+  (let [capture-names (keep #(when (= :capture (:type %))
+                               (:name %))
+                            segments)]
+    (into {}
+          (map (fn [^String name]
+                 [(keyword name) (.group matcher name)])
+               capture-names))))

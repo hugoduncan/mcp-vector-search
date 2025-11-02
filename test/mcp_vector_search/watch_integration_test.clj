@@ -78,9 +78,9 @@
 
     (testing "re-ingests modified files (simulating MODIFY event)"
       (let [temp-dir (fs/create-temp-dir)
-            system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                    :embedding-store (InMemoryEmbeddingStore.)
-                    :metadata-values (atom {})}]
+            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)
+                          :metadata-values {}})]
         (try
           (let [test-file (fs/file temp-dir "test.md")
                 canonical-path (.getCanonicalPath test-file)
@@ -90,11 +90,11 @@
 
             ;; Initial ingest
             (ingest/ingest system parsed-config)
-            (is (= 1 (count-embeddings (:embedding-store system)
-                                       (:embedding-model system))))
+            (is (= 1 (count-embeddings (:embedding-store @system)
+                                       (:embedding-model @system))))
 
             ;; Simulate MODIFY event: remove old, re-ingest new
-            (.removeAll (:embedding-store system) [canonical-path])
+            (.removeAll (:embedding-store @system) [canonical-path])
             (spit test-file "Modified content")
 
             (let [file-map {:file test-file
@@ -105,17 +105,17 @@
               (ingest/ingest-file system file-map))
 
             ;; Should still have 1 document
-            (is (= 1 (count-embeddings (:embedding-store system)
-                                       (:embedding-model system)))
+            (is (= 1 (count-embeddings (:embedding-store @system)
+                                       (:embedding-model @system)))
                 "Should have 1 document after re-indexing"))
           (finally
             (fs/delete-tree temp-dir)))))
 
     (testing "removes deleted files (simulating DELETE event)"
       (let [temp-dir (fs/create-temp-dir)
-            system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                    :embedding-store (InMemoryEmbeddingStore.)
-                    :metadata-values (atom {})}]
+            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)
+                          :metadata-values {}})]
         (try
           (let [test-file (fs/file temp-dir "test.md")
                 canonical-path (.getCanonicalPath test-file)
@@ -125,27 +125,27 @@
 
             ;; Initial ingest
             (ingest/ingest system parsed-config)
-            (is (= 1 (count-embeddings (:embedding-store system)
-                                       (:embedding-model system))))
+            (is (= 1 (count-embeddings (:embedding-store @system)
+                                       (:embedding-model @system))))
 
             ;; Simulate DELETE event
-            (.removeAll (:embedding-store system) [canonical-path])
+            (.removeAll (:embedding-store @system) [canonical-path])
 
             ;; Should have 0 documents
-            (is (zero? (count-embeddings (:embedding-store system)
-                                         (:embedding-model system)))))
+            (is (zero? (count-embeddings (:embedding-store @system)
+                                         (:embedding-model @system)))))
           (finally
             (fs/delete-tree temp-dir)))))
 
     (testing "adds newly created files (simulating CREATE event)"
       (let [temp-dir (fs/create-temp-dir)
-            system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                    :embedding-store (InMemoryEmbeddingStore.)
-                    :metadata-values (atom {})}]
+            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)
+                          :metadata-values {}})]
         (try
           ;; Start with empty store
-          (is (zero? (count-embeddings (:embedding-store system)
-                                       (:embedding-model system))))
+          (is (zero? (count-embeddings (:embedding-store @system)
+                                       (:embedding-model @system))))
 
           ;; Simulate CREATE event: ingest new file
           (let [new-file (fs/file temp-dir "new.md")
@@ -158,16 +158,16 @@
             (ingest/ingest-file system file-map))
 
           ;; Should have 1 document
-          (is (= 1 (count-embeddings (:embedding-store system)
-                                     (:embedding-model system))))
+          (is (= 1 (count-embeddings (:embedding-store @system)
+                                     (:embedding-model @system))))
           (finally
             (fs/delete-tree temp-dir)))))
 
     (testing "handles multiple rapid changes (simulating debouncing)"
       (let [temp-dir (fs/create-temp-dir)
-            system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                    :embedding-store (InMemoryEmbeddingStore.)
-                    :metadata-values (atom {})}]
+            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)
+                          :metadata-values {}})]
         (try
           (let [test-file (fs/file temp-dir "test.md")
                 canonical-path (.getCanonicalPath test-file)
@@ -180,12 +180,12 @@
             ;; Simulate rapid changes (last one wins after debouncing)
             (dotimes [i 5]
               (spit test-file (str "Change " i))
-              (.removeAll (:embedding-store system) [canonical-path])
+              (.removeAll (:embedding-store @system) [canonical-path])
               (ingest/ingest-file system file-map))
 
             ;; Should have exactly 1 document
-            (is (= 1 (count-embeddings (:embedding-store system)
-                                       (:embedding-model system)))))
+            (is (= 1 (count-embeddings (:embedding-store @system)
+                                       (:embedding-model @system)))))
           (finally
             (fs/delete-tree temp-dir)))))))
 
@@ -196,9 +196,9 @@
 
     (testing "creates multiple segments for multi-line file"
       (let [temp-dir (fs/create-temp-dir)
-            system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                    :embedding-store (InMemoryEmbeddingStore.)
-                    :metadata-values (atom {})}]
+            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)
+                          :metadata-values {}})]
         (try
           (let [test-file (fs/file temp-dir "test.txt")
                 canonical-path (.getCanonicalPath test-file)
@@ -214,21 +214,21 @@
             (ingest/ingest-file system file-map)
 
             ;; Should have 3 segments total
-            (is (= 3 (count-embeddings (:embedding-store system)
-                                       (:embedding-model system))))
+            (is (= 3 (count-embeddings (:embedding-store @system)
+                                       (:embedding-model @system))))
 
             ;; All segments should have the same file-id
-            (is (= 3 (count-embeddings-by-file-id (:embedding-store system)
-                                                   (:embedding-model system)
+            (is (= 3 (count-embeddings-by-file-id (:embedding-store @system)
+                                                   (:embedding-model @system)
                                                    canonical-path))))
           (finally
             (fs/delete-tree temp-dir)))))
 
     (testing "removes all segments on file modification"
       (let [temp-dir (fs/create-temp-dir)
-            system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                    :embedding-store (InMemoryEmbeddingStore.)
-                    :metadata-values (atom {})}]
+            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)
+                          :metadata-values {}})]
         (try
           (let [test-file (fs/file temp-dir "test.txt")
                 canonical-path (.getCanonicalPath test-file)
@@ -241,35 +241,35 @@
 
             ;; Initial ingest - 3 segments
             (ingest/ingest-file system file-map)
-            (is (= 3 (count-embeddings (:embedding-store system)
-                                       (:embedding-model system))))
+            (is (= 3 (count-embeddings (:embedding-store @system)
+                                       (:embedding-model @system))))
 
             ;; Simulate MODIFY: remove all segments with file-id
             (let [removed-count (#'watch/remove-by-file-id
-                                  (:embedding-store system)
-                                  (:embedding-model system)
+                                  (:embedding-store @system)
+                                  (:embedding-model @system)
                                   canonical-path)]
               (is (= 3 removed-count) "Should remove all 3 segments"))
 
             ;; Verify all segments removed
-            (is (zero? (count-embeddings (:embedding-store system)
-                                         (:embedding-model system))))
+            (is (zero? (count-embeddings (:embedding-store @system)
+                                         (:embedding-model @system))))
 
             ;; Re-ingest with modified content (2 lines now)
             (spit test-file "New line 1\nNew line 2")
             (ingest/ingest-file system file-map)
 
             ;; Should have 2 new segments
-            (is (= 2 (count-embeddings (:embedding-store system)
-                                       (:embedding-model system)))))
+            (is (= 2 (count-embeddings (:embedding-store @system)
+                                       (:embedding-model @system)))))
           (finally
             (fs/delete-tree temp-dir)))))
 
     (testing "removes all segments on file deletion"
       (let [temp-dir (fs/create-temp-dir)
-            system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                    :embedding-store (InMemoryEmbeddingStore.)
-                    :metadata-values (atom {})}]
+            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)
+                          :metadata-values {}})]
         (try
           (let [test-file (fs/file temp-dir "test.txt")
                 canonical-path (.getCanonicalPath test-file)
@@ -282,19 +282,19 @@
 
             ;; Initial ingest - 4 segments
             (ingest/ingest-file system file-map)
-            (is (= 4 (count-embeddings (:embedding-store system)
-                                       (:embedding-model system))))
+            (is (= 4 (count-embeddings (:embedding-store @system)
+                                       (:embedding-model @system))))
 
             ;; Simulate DELETE: remove all segments with file-id
             (let [removed-count (#'watch/remove-by-file-id
-                                  (:embedding-store system)
-                                  (:embedding-model system)
+                                  (:embedding-store @system)
+                                  (:embedding-model @system)
                                   canonical-path)]
               (is (= 4 removed-count) "Should remove all 4 segments"))
 
             ;; Verify all segments removed
-            (is (zero? (count-embeddings (:embedding-store system)
-                                         (:embedding-model system)))))
+            (is (zero? (count-embeddings (:embedding-store @system)
+                                         (:embedding-model @system)))))
           (finally
             (fs/delete-tree temp-dir)))))))
 
@@ -306,9 +306,9 @@
 
     (testing "creates multiple chunks for large file"
       (let [temp-dir (fs/create-temp-dir)
-            system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                    :embedding-store (InMemoryEmbeddingStore.)
-                    :metadata-values (atom {})}]
+            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)
+                          :metadata-values {}})]
         (try
           (let [test-file (fs/file temp-dir "test.md")
                 canonical-path (.getCanonicalPath test-file)
@@ -332,16 +332,16 @@
             (ingest/ingest-file system file-map)
 
             ;; Should have multiple chunks (at least 2)
-            (let [chunk-count (count-embeddings (:embedding-store system)
-                                                (:embedding-model system))]
+            (let [chunk-count (count-embeddings (:embedding-store @system)
+                                                (:embedding-model @system))]
               (is (>= chunk-count 2)
                   (str "Should create at least 2 chunks, got " chunk-count)))
 
             ;; All chunks should have the same file-id
-            (is (= (count-embeddings (:embedding-store system)
-                                     (:embedding-model system))
-                   (count-embeddings-by-file-id (:embedding-store system)
-                                                 (:embedding-model system)
+            (is (= (count-embeddings (:embedding-store @system)
+                                     (:embedding-model @system))
+                   (count-embeddings-by-file-id (:embedding-store @system)
+                                                 (:embedding-model @system)
                                                  canonical-path))
                 "All chunks should share the same file-id"))
           (finally
@@ -349,9 +349,9 @@
 
     (testing "removes all chunks on file modification"
       (let [temp-dir (fs/create-temp-dir)
-            system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                    :embedding-store (InMemoryEmbeddingStore.)
-                    :metadata-values (atom {})}]
+            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)
+                          :metadata-values {}})]
         (try
           (let [test-file (fs/file temp-dir "test.md")
                 canonical-path (.getCanonicalPath test-file)
@@ -369,22 +369,22 @@
 
             ;; Initial ingest
             (ingest/ingest-file system file-map)
-            (let [initial-count (count-embeddings (:embedding-store system)
-                                                  (:embedding-model system))]
+            (let [initial-count (count-embeddings (:embedding-store @system)
+                                                  (:embedding-model @system))]
               (is (>= initial-count 2)
                   (str "Initial ingestion should create at least 2 chunks, got " initial-count))
 
               ;; Simulate MODIFY: remove all chunks by file-id
               (let [removed-count (#'watch/remove-by-file-id
-                                    (:embedding-store system)
-                                    (:embedding-model system)
+                                    (:embedding-store @system)
+                                    (:embedding-model @system)
                                     canonical-path)]
                 (is (= initial-count removed-count)
                     (str "Should remove all " initial-count " chunks, removed " removed-count)))
 
               ;; Verify all chunks removed
-              (is (zero? (count-embeddings (:embedding-store system)
-                                           (:embedding-model system)))
+              (is (zero? (count-embeddings (:embedding-store @system)
+                                           (:embedding-model @system)))
                   "All chunks should be removed after file-id based removal")
 
               ;; Re-ingest with modified content (different size → different chunk count)
@@ -395,8 +395,8 @@
                 (ingest/ingest-file system file-map)
 
                 ;; Should have new chunks (possibly different count)
-                (let [new-count (count-embeddings (:embedding-store system)
-                                                  (:embedding-model system))]
+                (let [new-count (count-embeddings (:embedding-store @system)
+                                                  (:embedding-model @system))]
                   (is (>= new-count 1)
                       (str "Re-ingestion should create at least 1 chunk, got " new-count))))))
           (finally
@@ -404,9 +404,9 @@
 
     (testing "removes all chunks on file deletion"
       (let [temp-dir (fs/create-temp-dir)
-            system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                    :embedding-store (InMemoryEmbeddingStore.)
-                    :metadata-values (atom {})}]
+            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)
+                          :metadata-values {}})]
         (try
           (let [test-file (fs/file temp-dir "test.md")
                 canonical-path (.getCanonicalPath test-file)
@@ -424,31 +424,31 @@
 
             ;; Initial ingest
             (ingest/ingest-file system file-map)
-            (let [chunk-count (count-embeddings (:embedding-store system)
-                                                (:embedding-model system))]
+            (let [chunk-count (count-embeddings (:embedding-store @system)
+                                                (:embedding-model @system))]
               (is (>= chunk-count 2)
                   (str "Should create at least 2 chunks, got " chunk-count))
 
               ;; Simulate DELETE: remove all chunks by file-id
               (let [removed-count (#'watch/remove-by-file-id
-                                    (:embedding-store system)
-                                    (:embedding-model system)
+                                    (:embedding-store @system)
+                                    (:embedding-model @system)
                                     canonical-path)]
                 (is (= chunk-count removed-count)
                     (str "Should remove all " chunk-count " chunks, removed " removed-count)))
 
               ;; Verify all chunks removed
-              (is (zero? (count-embeddings (:embedding-store system)
-                                           (:embedding-model system)))
+              (is (zero? (count-embeddings (:embedding-store @system)
+                                           (:embedding-model @system)))
                   "All chunks should be removed after deletion")))
           (finally
             (fs/delete-tree temp-dir)))))
 
     (testing "verifies chunk metadata during re-indexing"
       (let [temp-dir (fs/create-temp-dir)
-            system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                    :embedding-store (InMemoryEmbeddingStore.)
-                    :metadata-values (atom {})}]
+            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                          :embedding-store (InMemoryEmbeddingStore.)
+                          :metadata-values {}})]
         (try
           (let [test-file (fs/file temp-dir "test.md")
                 canonical-path (.getCanonicalPath test-file)

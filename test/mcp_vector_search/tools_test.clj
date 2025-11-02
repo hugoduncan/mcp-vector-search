@@ -17,8 +17,8 @@
   ;; Test search tool specification and implementation with actual embeddings
   (testing "search-tool"
     (testing "returns a valid tool specification"
-      (let [system {:embedding-model :mock-model
-                    :embedding-store :mock-store}
+      (let [system (atom {:embedding-model :mock-model
+                          :embedding-store :mock-store})
             config {:description "Test description"}
             tool (sut/search-tool system config)]
         (is (map? tool))
@@ -30,8 +30,8 @@
     (testing "searches documents by semantic similarity"
       (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
             embedding-store (InMemoryEmbeddingStore.)
-            system {:embedding-model embedding-model
-                    :embedding-store embedding-store}
+            system (atom {:embedding-model embedding-model
+                          :embedding-store embedding-store})
 
             doc1 "I like football"
             doc2 "I enjoy basketball"
@@ -68,8 +68,8 @@
     (testing "respects limit parameter"
       (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
             embedding-store (InMemoryEmbeddingStore.)
-            system {:embedding-model embedding-model
-                    :embedding-store embedding-store}]
+            system (atom {:embedding-model embedding-model
+                          :embedding-store embedding-store})]
 
         (dotimes [i 5]
           (let [text (str "Document " i)
@@ -88,8 +88,8 @@
     (testing "uses default limit when not specified"
       (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
             embedding-store (InMemoryEmbeddingStore.)
-            system {:embedding-model embedding-model
-                    :embedding-store embedding-store}
+            system (atom {:embedding-model embedding-model
+                          :embedding-store embedding-store})
             seg (TextSegment/from "test" (Metadata/from {}))]
 
         (.add embedding-store (.content (.embed embedding-model seg)) seg)
@@ -102,8 +102,8 @@
           (is (vector? (:content result))))))
 
     (testing "handles errors gracefully"
-      (let [system {:embedding-model nil
-                    :embedding-store nil}
+      (let [system (atom {:embedding-model nil
+                          :embedding-store nil})
             config {:description "Test search"}
             tool (sut/search-tool system config)
             impl (:implementation tool)
@@ -116,8 +116,8 @@
     (testing "filters by metadata"
       (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
             embedding-store (InMemoryEmbeddingStore.)
-            system {:embedding-model embedding-model
-                    :embedding-store embedding-store}
+            system (atom {:embedding-model embedding-model
+                          :embedding-store embedding-store})
 
             doc1 "AI content"
             doc2 "ML content"
@@ -150,8 +150,8 @@
     (testing "filters by multiple metadata fields"
       (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
             embedding-store (InMemoryEmbeddingStore.)
-            system {:embedding-model embedding-model
-                    :embedding-store embedding-store}
+            system (atom {:embedding-model embedding-model
+                          :embedding-store embedding-store})
 
             doc1 "AI article"
             doc2 "ML paper"
@@ -184,11 +184,10 @@
   (testing "metadata schema generation"
 
     (testing "generates schema with enum constraints for discovered metadata"
-      (let [metadata-values (atom {:category #{"ai" "ml"}
-                                   :author #{"alice" "bob"}})
-            system {:embedding-model :mock-model
-                    :embedding-store :mock-store
-                    :metadata-values metadata-values}
+      (let [system (atom {:embedding-model :mock-model
+                          :embedding-store :mock-store
+                          :metadata-values {:category #{"ai" "ml"}
+                                            :author #{"alice" "bob"}}})
             config {:description "Test"}
             tool (sut/search-tool system config)
             metadata-schema (get-in tool [:inputSchema :properties "metadata"])]
@@ -202,10 +201,9 @@
         (is (= ["alice" "bob"] (get-in metadata-schema [:properties "author" :enum])))))
 
     (testing "generates empty schema when no metadata discovered"
-      (let [metadata-values (atom {})
-            system {:embedding-model :mock-model
-                    :embedding-store :mock-store
-                    :metadata-values metadata-values}
+      (let [system (atom {:embedding-model :mock-model
+                          :embedding-store :mock-store
+                          :metadata-values {}})
             config {:description "Test"}
             tool (sut/search-tool system config)
             metadata-schema (get-in tool [:inputSchema :properties "metadata"])]
@@ -214,10 +212,9 @@
         (is (nil? (:properties metadata-schema)))))
 
     (testing "sorts enum values alphabetically"
-      (let [metadata-values (atom {:priority #{"low" "high" "medium"}})
-            system {:embedding-model :mock-model
-                    :embedding-store :mock-store
-                    :metadata-values metadata-values}
+      (let [system (atom {:embedding-model :mock-model
+                          :embedding-store :mock-store
+                          :metadata-values {:priority #{"low" "high" "medium"}}})
             config {:description "Test"}
             tool (sut/search-tool system config)
             priority-enum (get-in tool [:inputSchema :properties "metadata" :properties "priority" :enum])]
