@@ -1,0 +1,13 @@
+{
+  "name": "config-guide",
+  "description": "Guide for writing mcp-vector-search configuration files",
+  "version": "1.0.0",
+  "author": {
+    "name": "Hugo Duncan",
+    "email": "hugo_duncan@yahoo.com",
+    "url": "https://github.com/hugoduncan"
+  },
+  "keywords": ["mcp-vector-search", "configuration", "setup"],
+  "license": "EPL-1.0",
+  "skills": ["./skills/mcp-vector-search-config-guide"]
+}

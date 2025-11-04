@@ -1,0 +1,44 @@
+{
+  "name": "mcp-vector-search-plugins",
+  "owner": {
+    "name": "Hugo Duncan",
+    "email": "hugo_duncan@yahoo.com",
+    "url": "https://github.com/hugoduncan"
+  },
+  "metadata": {
+    "description": "Claude Code plugins for mcp-vector-search configuration and library integration",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "config-guide",
+      "description": "Guide for writing mcp-vector-search configuration files",
+      "version": "1.0.0",
+      "author": {
+        "name": "Hugo Duncan",
+        "email": "hugo_duncan@yahoo.com",
+        "url": "https://github.com/hugoduncan"
+      },
+      "source": "./.claude-plugin/plugins/config-guide",
+      "category": "configuration",
+      "tags": ["mcp-vector-search", "setup", "config"],
+      "strict": true,
+      "license": "EPL-1.0"
+    },
+    {
+      "name": "embed-guide",
+      "description": "Guide for embedding mcp-vector-search as a library in MCP servers",
+      "version": "1.0.0",
+      "author": {
+        "name": "Hugo Duncan",
+        "email": "hugo_duncan@yahoo.com",
+        "url": "https://github.com/hugoduncan"
+      },
+      "source": "./.claude-plugin/plugins/embed-guide",
+      "category": "integration",
+      "tags": ["mcp-vector-search", "library", "embedding"],
+      "strict": true,
+      "license": "EPL-1.0"
+    }
+  ]
+}

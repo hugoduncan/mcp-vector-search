@@ -26,6 +26,7 @@ Index documentation, code, and knowledge bases with semantic embeddings. AI assi
 - [Installation](#installation)
 - [Basic Configuration](#basic-configuration)
 - [Using the Search Tool](#using-the-search-tool)
+- [Claude Code Plugins](#claude-code-plugins)
 - [Advanced Features](#advanced-features)
 - [Development](#development)
 - [Documentation](#documentation)
@@ -182,6 +183,52 @@ The assistant uses semantic search automatically. Searches can filter by metadat
 - `query` (required): Search text
 - `limit` (optional): Max results (default: 10)
 - `metadata` (optional): Filter by key-value pairs (AND logic)
+
+## Claude Code Plugins
+
+Two Claude Code skills are available to guide configuration and library integration:
+
+### Installing Plugins
+
+Add the mcp-vector-search marketplace to Claude Code:
+
+```bash
+/plugin marketplace add hugoduncan/mcp-vector-search
+```
+
+Then install both plugins:
+
+```bash
+/plugin install config-guide@mcp-vector-search-plugins
+/plugin install embed-guide@mcp-vector-search-plugins
+```
+
+Or install the marketplace from a local clone:
+
+```bash
+# From the mcp-vector-search directory
+/plugin marketplace add ./
+```
+
+### Available Plugins
+
+**config-guide** - Interactive guide for writing `.mcp-vector-search/config.edn` files:
+- Path specifications (filesystem/classpath, globs, captures)
+- Ingest strategies (whole-document, namespace-doc, code-analysis, chunked, file-path)
+- Metadata extraction
+- File watching setup
+
+Usage: `/config-guide` in Claude Code
+
+**embed-guide** - Interactive guide for embedding mcp-vector-search as a library:
+- Adding dependencies
+- Resource bundling
+- Classpath vs filesystem sources
+- JAR packaging with build scripts
+
+Usage: `/embed-guide` in Claude Code
+
+Both skills provide comprehensive, interactive guidance with examples and best practices.
 
 ## Advanced Features
 

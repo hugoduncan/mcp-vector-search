@@ -1,0 +1,13 @@
+{
+  "name": "embed-guide",
+  "description": "Guide for embedding mcp-vector-search as a library in MCP servers",
+  "version": "1.0.0",
+  "author": {
+    "name": "Hugo Duncan",
+    "email": "hugo_duncan@yahoo.com",
+    "url": "https://github.com/hugoduncan"
+  },
+  "keywords": ["mcp-vector-search", "library", "integration", "embedding"],
+  "license": "EPL-1.0",
+  "skills": ["./skills/mcp-vector-search-embed-guide"]
+}
