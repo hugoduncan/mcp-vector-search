@@ -1,5 +1,6 @@
 (ns mcp-vector-search.config-test
   (:require
+    [babashka.fs :as fs]
     [clojure.java.io :as io]
     [clojure.test :refer [deftest testing is]]
     [mcp-vector-search.config :as sut]))
@@ -19,12 +20,23 @@
             (.delete test-file)))))
 
     (testing "loads from default locations when no explicit path provided"
-      ;; When using default path, function searches classpath then filesystem
-      ;; In this test environment, project config exists so it will be found
-      (let [result (sut/load-config)]
-        (is (map? result))
-        (is (some? (:description result)))
-        (is (vector? (:sources result)))))
+      ;; Create temporary home directory with config file
+      (let [original-home (System/getProperty "user.home")
+            temp-dir (fs/create-temp-dir {:prefix "config-test"})
+            temp-dir-file (fs/file temp-dir)
+            config-dir (io/file temp-dir-file ".mcp-vector-search")
+            config-file (io/file config-dir "config.edn")]
+        (try
+          (.mkdirs config-dir)
+          (spit config-file "{:description \"Test config\" :sources [{:path \"/docs/*.md\"}]}")
+          (System/setProperty "user.home" (str temp-dir-file))
+          (let [result (sut/load-config)]
+            (is (map? result))
+            (is (= "Test config" (:description result)))
+            (is (= [{:path "/docs/*.md"}] (:sources result))))
+          (finally
+            (System/setProperty "user.home" original-home)
+            (fs/delete-tree temp-dir)))))
 
     (testing "throws when config not found"
       (is (thrown-with-msg? Exception #"No configuration file found"
