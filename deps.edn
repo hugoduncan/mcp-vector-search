@@ -1,7 +1,8 @@
 {:paths ["src"]
  :deps  {io.github.hugoduncan/mcp-clj-server
          {:git/url   "https://github.com/hugoduncan/mcp-clj"
-          :git/sha   "50a2d1ab100c27b76e80b5674d6c2ee567b079b6"
+          :git/sha   "08ec63baeed813bc09673e61c20df8884961c11a"
+          :git/tag   "v0.1.66"
           :deps/root "projects/server"}
 
          dev.langchain4j/langchain4j
@@ -27,7 +28,8 @@
         :extra-deps  {babashka/fs         {:mvn/version "0.5.23"}}
         :override-deps {org.hugpduncan/mcp-clj-server
                         {:git/url   "https://github.com/hugoduncan/mcp-clj"
-                         :git/sha   "50a2d1ab100c27b76e80b5674d6c2ee567b079b6"
+                         :git/sha   "08ec63baeed813bc09673e61c20df8884961c11a"
+                         :git/tag   "v0.1.66"
                          :deps/root "projects/test-dep"}}
         :jvm-opts    ["--enable-native-access=ALL-UNNAMED"]}
   :test {:extra-paths ["test"]
@@ -35,7 +37,8 @@
                        babashka/fs         {:mvn/version "0.5.23"}}
          :override-deps {org.hugpduncan/mcp-clj-server
                          {:git/url   "https://github.com/hugoduncan/mcp-clj"
-                          :git/sha   "50a2d1ab100c27b76e80b5674d6c2ee567b079b6"
+                          :git/sha   "08ec63baeed813bc09673e61c20df8884961c11a"
+                          :git/tag   "v0.1.66"
                           :deps/root "projects/test-dep"}}
          :jvm-opts    ["--enable-native-access=ALL-UNNAMED"]
          :main-opts   ["-m" "kaocha.runner"]}
