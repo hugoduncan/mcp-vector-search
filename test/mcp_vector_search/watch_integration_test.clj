@@ -14,37 +14,47 @@
       TextSegment)
     (dev.langchain4j.model.embedding.onnx.allminilml6v2
       AllMiniLmL6V2EmbeddingModel)
+    (dev.langchain4j.model.output
+      Response)
     (dev.langchain4j.store.embedding
-      EmbeddingSearchRequest)
+      EmbeddingSearchRequest
+      EmbeddingSearchResult)
     (dev.langchain4j.store.embedding.filter.comparison
       IsEqualTo)
     (dev.langchain4j.store.embedding.inmemory
-      InMemoryEmbeddingStore)))
+      InMemoryEmbeddingStore)
+    (java.util
+      Collection)))
 
 
 (defn- count-embeddings
   "Count embeddings in the store."
-  [embedding-store embedding-model]
-  (let [query-embedding (.content (.embed embedding-model (TextSegment/from "test")))
+  [^InMemoryEmbeddingStore embedding-store
+   ^AllMiniLmL6V2EmbeddingModel embedding-model]
+  (let [^Response response (.embed embedding-model (TextSegment/from "test"))
+        query-embedding (.content response)
         request (-> (EmbeddingSearchRequest/builder)
                     (.queryEmbedding query-embedding)
                     (.maxResults (int 1000))
                     (.build))
-        results (.search embedding-store request)]
+        ^EmbeddingSearchResult results (.search embedding-store request)]
     (count (.matches results))))
 
 
 (defn- count-embeddings-by-file-id
   "Count embeddings with a specific file-id in the store."
-  [embedding-store embedding-model file-id]
-  (let [query-embedding (.content (.embed embedding-model (TextSegment/from "test")))
+  [^InMemoryEmbeddingStore embedding-store
+   ^AllMiniLmL6V2EmbeddingModel embedding-model
+   file-id]
+  (let [^Response response (.embed embedding-model (TextSegment/from "test"))
+        query-embedding (.content response)
         metadata-filter (IsEqualTo. "file-id" file-id)
         request (-> (EmbeddingSearchRequest/builder)
                     (.queryEmbedding query-embedding)
                     (.maxResults (int 1000))
                     (.filter metadata-filter)
                     (.build))
-        results (.search embedding-store request)]
+        ^EmbeddingSearchResult results (.search embedding-store request)]
     (count (.matches results))))
 
 
@@ -98,7 +108,9 @@
                                        (:embedding-model @system))))
 
             ;; Simulate MODIFY event: remove old, re-ingest new
-            (.removeAll (:embedding-store @system) [canonical-path])
+            (let [^InMemoryEmbeddingStore store (:embedding-store @system)
+                  ^Collection ids [canonical-path]]
+              (.removeAll store ids))
             (spit test-file "Modified content")
 
             (let [file-map {:file test-file
@@ -133,7 +145,9 @@
                                        (:embedding-model @system))))
 
             ;; Simulate DELETE event
-            (.removeAll (:embedding-store @system) [canonical-path])
+            (let [^InMemoryEmbeddingStore store (:embedding-store @system)
+                  ^Collection ids [canonical-path]]
+              (.removeAll store ids))
 
             ;; Should have 0 documents
             (is (zero? (count-embeddings (:embedding-store @system)
@@ -184,7 +198,9 @@
             ;; Simulate rapid changes (last one wins after debouncing)
             (dotimes [i 5]
               (spit test-file (str "Change " i))
-              (.removeAll (:embedding-store @system) [canonical-path])
+              (let [^InMemoryEmbeddingStore store (:embedding-store @system)
+                    ^Collection ids [canonical-path]]
+                (.removeAll store ids))
               (ingest/ingest-file system file-map))
 
             ;; Should have exactly 1 document

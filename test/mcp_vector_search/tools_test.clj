@@ -6,10 +6,14 @@
   (:import
     (dev.langchain4j.data.document
       Metadata)
+    (dev.langchain4j.data.embedding
+      Embedding)
     (dev.langchain4j.data.segment
       TextSegment)
     (dev.langchain4j.model.embedding.onnx.allminilml6v2
       AllMiniLmL6V2EmbeddingModel)
+    (dev.langchain4j.model.output
+      Response)
     (dev.langchain4j.store.embedding.inmemory
       InMemoryEmbeddingStore)))
 
@@ -30,7 +34,7 @@
 
     (testing "searches documents by semantic similarity"
       (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-            embedding-store (InMemoryEmbeddingStore.)
+            ^InMemoryEmbeddingStore embedding-store (InMemoryEmbeddingStore.)
             system (atom {:embedding-model embedding-model
                           :embedding-store embedding-store})
 
@@ -40,11 +44,14 @@
 
             seg1 (TextSegment/from doc1 (Metadata/from {}))
             seg2 (TextSegment/from doc2 (Metadata/from {}))
-            seg3 (TextSegment/from doc3 (Metadata/from {}))]
+            seg3 (TextSegment/from doc3 (Metadata/from {}))
+            ^Embedding emb1 (.content ^Response (.embed embedding-model seg1))
+            ^Embedding emb2 (.content ^Response (.embed embedding-model seg2))
+            ^Embedding emb3 (.content ^Response (.embed embedding-model seg3))]
 
-        (.add embedding-store (.content (.embed embedding-model seg1)) seg1)
-        (.add embedding-store (.content (.embed embedding-model seg2)) seg2)
-        (.add embedding-store (.content (.embed embedding-model seg3)) seg3)
+        (.add ^InMemoryEmbeddingStore embedding-store emb1 seg1)
+        (.add ^InMemoryEmbeddingStore embedding-store emb2 seg2)
+        (.add ^InMemoryEmbeddingStore embedding-store emb3 seg3)
 
         (let [config {:description "Test search"}
               tool (sut/search-tool system config)
@@ -68,14 +75,15 @@
 
     (testing "respects limit parameter"
       (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-            embedding-store (InMemoryEmbeddingStore.)
+            ^InMemoryEmbeddingStore embedding-store (InMemoryEmbeddingStore.)
             system (atom {:embedding-model embedding-model
                           :embedding-store embedding-store})]
 
         (dotimes [i 5]
           (let [text (str "Document " i)
-                seg (TextSegment/from text (Metadata/from {}))]
-            (.add embedding-store (.content (.embed embedding-model seg)) seg)))
+                seg (TextSegment/from text (Metadata/from {}))
+                ^Embedding emb (.content ^Response (.embed embedding-model seg))]
+            (.add ^InMemoryEmbeddingStore embedding-store emb seg)))
 
         (let [config {:description "Test search"}
               tool (sut/search-tool system config)
@@ -88,12 +96,13 @@
 
     (testing "uses default limit when not specified"
       (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-            embedding-store (InMemoryEmbeddingStore.)
+            ^InMemoryEmbeddingStore embedding-store (InMemoryEmbeddingStore.)
             system (atom {:embedding-model embedding-model
                           :embedding-store embedding-store})
-            seg (TextSegment/from "test" (Metadata/from {}))]
+            seg (TextSegment/from "test" (Metadata/from {}))
+            ^Embedding emb (.content ^Response (.embed embedding-model seg))]
 
-        (.add embedding-store (.content (.embed embedding-model seg)) seg)
+        (.add ^InMemoryEmbeddingStore embedding-store emb seg)
 
         (let [config {:description "Test search"}
               tool (sut/search-tool system config)
@@ -116,7 +125,7 @@
 
     (testing "filters by metadata"
       (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-            embedding-store (InMemoryEmbeddingStore.)
+            ^InMemoryEmbeddingStore embedding-store (InMemoryEmbeddingStore.)
             system (atom {:embedding-model embedding-model
                           :embedding-store embedding-store})
 
@@ -130,11 +139,14 @@
 
             seg1 (TextSegment/from doc1 meta1)
             seg2 (TextSegment/from doc2 meta2)
-            seg3 (TextSegment/from doc3 meta3)]
+            seg3 (TextSegment/from doc3 meta3)
+            ^Embedding emb1 (.content ^Response (.embed embedding-model seg1))
+            ^Embedding emb2 (.content ^Response (.embed embedding-model seg2))
+            ^Embedding emb3 (.content ^Response (.embed embedding-model seg3))]
 
-        (.add embedding-store (.content (.embed embedding-model seg1)) seg1)
-        (.add embedding-store (.content (.embed embedding-model seg2)) seg2)
-        (.add embedding-store (.content (.embed embedding-model seg3)) seg3)
+        (.add ^InMemoryEmbeddingStore embedding-store emb1 seg1)
+        (.add ^InMemoryEmbeddingStore embedding-store emb2 seg2)
+        (.add ^InMemoryEmbeddingStore embedding-store emb3 seg3)
 
         (let [config {:description "Test search"}
               tool (sut/search-tool system config)
@@ -150,7 +162,7 @@
 
     (testing "filters by multiple metadata fields"
       (let [embedding-model (AllMiniLmL6V2EmbeddingModel.)
-            embedding-store (InMemoryEmbeddingStore.)
+            ^InMemoryEmbeddingStore embedding-store (InMemoryEmbeddingStore.)
             system (atom {:embedding-model embedding-model
                           :embedding-store embedding-store})
 
@@ -164,11 +176,14 @@
 
             seg1 (TextSegment/from doc1 meta1)
             seg2 (TextSegment/from doc2 meta2)
-            seg3 (TextSegment/from doc3 meta3)]
+            seg3 (TextSegment/from doc3 meta3)
+            ^Embedding emb1 (.content ^Response (.embed embedding-model seg1))
+            ^Embedding emb2 (.content ^Response (.embed embedding-model seg2))
+            ^Embedding emb3 (.content ^Response (.embed embedding-model seg3))]
 
-        (.add embedding-store (.content (.embed embedding-model seg1)) seg1)
-        (.add embedding-store (.content (.embed embedding-model seg2)) seg2)
-        (.add embedding-store (.content (.embed embedding-model seg3)) seg3)
+        (.add ^InMemoryEmbeddingStore embedding-store emb1 seg1)
+        (.add ^InMemoryEmbeddingStore embedding-store emb2 seg2)
+        (.add ^InMemoryEmbeddingStore embedding-store emb3 seg3)
 
         (let [config {:description "Test search"}
               tool (sut/search-tool system config)

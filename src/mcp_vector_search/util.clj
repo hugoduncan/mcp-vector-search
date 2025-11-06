@@ -25,9 +25,9 @@
   Returns:
   - Normalized path string"
   [file-or-path]
-  (let [file (if (instance? File file-or-path)
-               file-or-path
-               (io/file file-or-path))
+  (let [^File file (if (instance? File file-or-path)
+                     file-or-path
+                     (io/file file-or-path))
         path (.getPath file)]
     (if (.isAbsolute file)
       (try

@@ -16,21 +16,26 @@
       TextSegment)
     (dev.langchain4j.model.embedding.onnx.allminilml6v2
       AllMiniLmL6V2EmbeddingModel)
+    (dev.langchain4j.model.output
+      Response)
     (dev.langchain4j.store.embedding
-      EmbeddingSearchRequest)
+      EmbeddingSearchRequest
+      EmbeddingSearchResult)
     (dev.langchain4j.store.embedding.inmemory
       InMemoryEmbeddingStore)))
 
 
 (defn count-embeddings
   "Count total embeddings in the store."
-  [embedding-store embedding-model]
-  (let [query-embedding (.content (.embed embedding-model (TextSegment/from "test")))
+  [^InMemoryEmbeddingStore embedding-store
+   ^AllMiniLmL6V2EmbeddingModel embedding-model]
+  (let [^Response response (.embed embedding-model (TextSegment/from "test"))
+        query-embedding (.content response)
         request (-> (EmbeddingSearchRequest/builder)
                     (.queryEmbedding query-embedding)
                     (.maxResults (int 1000))
                     (.build))
-        results (.search embedding-store request)]
+        ^EmbeddingSearchResult results (.search embedding-store request)]
     (count (.matches results))))
 
 

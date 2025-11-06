@@ -47,7 +47,8 @@
     (dev.langchain4j.store.embedding.inmemory
       InMemoryEmbeddingStore)
     (io.github.classgraph
-      ClassGraph)
+      ClassGraph
+      Resource)
     (java.io
       File
       IOException)
@@ -106,7 +107,7 @@
         resources (.getAllResources scan-result)]
     (try
       (let [result (into []
-                         (keep (fn [resource]
+                         (keep (fn [^Resource resource]
                                  (let [resource-path (.getPath resource)
                                        matcher (re-matcher pattern resource-path)]
                                    (when (.matches matcher)
@@ -416,7 +417,8 @@
         ;; Create embeddings and store segments
         (doseq [{:keys [file-id text-to-embed content-to-store metadata]} segment-descriptors]
           (let [lc4j-metadata (common/build-lc4j-metadata metadata)
-                response (.embed ^EmbeddingModel embedding-model text-to-embed)
+                text-segment (TextSegment/from text-to-embed)
+                response (.embed ^EmbeddingModel embedding-model text-segment)
                 embedding (.content ^dev.langchain4j.model.output.Response response)
                 storage-segment (TextSegment/from content-to-store lc4j-metadata)]
             (.add ^InMemoryEmbeddingStore embedding-store file-id embedding storage-segment)))

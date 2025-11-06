@@ -15,9 +15,12 @@
     [mcp-vector-search.ingest.common :as common])
   (:import
     (dev.langchain4j.data.document
-      Document)
+      Document
+      DocumentSplitter)
     (dev.langchain4j.data.document.splitter
-      DocumentSplitters)))
+      DocumentSplitters)
+    (dev.langchain4j.data.segment
+      TextSegment)))
 
 
 (def ^:private splitter-cache
@@ -41,9 +44,9 @@
                     {:chunk-size chunk-size :chunk-overlap chunk-overlap :path path}))))
 
 
-(defn- next-chunk-offset
+(defn- ^long next-chunk-offset
   "Calculate the character offset for the next chunk."
-  [current-offset chunk-text chunk-overlap]
+  ^long [^long current-offset chunk-text ^long chunk-overlap]
   (+ current-offset (- (count chunk-text) chunk-overlap)))
 
 
@@ -52,15 +55,15 @@
   (let [chunk-size (get metadata :chunk-size 512)
         chunk-overlap (get metadata :chunk-overlap 100)
         _ (validate-chunk-config chunk-size chunk-overlap path)
-        splitter (splitter-cache chunk-size chunk-overlap)
+        ^DocumentSplitter splitter (splitter-cache chunk-size chunk-overlap)
         document (Document/from content)
         chunks (.split splitter document)
         chunk-count (count chunks)
         file-id path]
     (loop [indexed-chunks (map-indexed vector chunks)
-           char-offset 0
+           char-offset (long 0)
            result []]
-      (if-let [[chunk-index chunk] (first indexed-chunks)]
+      (if-let [[chunk-index ^TextSegment chunk] (first indexed-chunks)]
         (let [chunk-text (.text chunk)
               segment-id (common/generate-segment-id file-id chunk-index)
               enhanced-metadata (assoc metadata

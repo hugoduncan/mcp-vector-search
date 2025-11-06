@@ -202,8 +202,8 @@
                 "Content should be split into multiple chunks")
             ;; Verify overlap between adjacent chunks
             (doseq [[chunk-n chunk-n+1] (partition 2 1 segment-descriptors)]
-              (let [content-n (:text-to-embed chunk-n)
-                    content-n+1 (:text-to-embed chunk-n+1)
+              (let [^String content-n (:text-to-embed chunk-n)
+                    ^String content-n+1 (:text-to-embed chunk-n+1)
                     overlap-size 100
                     ;; Get last overlap-size chars from chunk N
                     suffix-n (subs content-n (max 0 (- (count content-n) overlap-size)))

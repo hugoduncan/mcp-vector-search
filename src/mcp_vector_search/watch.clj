@@ -28,6 +28,7 @@
     (dev.langchain4j.model.embedding
       EmbeddingModel)
     (dev.langchain4j.store.embedding
+      EmbeddingMatch
       EmbeddingSearchRequest
       EmbeddingStore)
     (dev.langchain4j.store.embedding.filter.comparison
@@ -37,6 +38,7 @@
     (java.time
       Instant)
     (java.util
+      Collection
       Timer)))
 
 
@@ -87,9 +89,9 @@
                     (.search request)
                     .matches)
         ;; Extract internal IDs from matches
-        ids (mapv #(.embeddingId %) matches)]
+        ids (mapv #(.embeddingId ^EmbeddingMatch %) matches)]
     (when (seq ids)
-      (.removeAll embedding-store ids))
+      (.removeAll embedding-store ^Collection ids))
     (count ids)))
 
 

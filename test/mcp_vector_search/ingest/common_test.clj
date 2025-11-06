@@ -27,7 +27,7 @@
   (testing "build-lc4j-metadata"
     (testing "converts Clojure map to LangChain4j Metadata"
       (let [clj-meta {:type "doc" :version "v1"}
-            lc4j-meta (sut/build-lc4j-metadata clj-meta)]
+            ^Metadata lc4j-meta (sut/build-lc4j-metadata clj-meta)]
         (is (instance? Metadata lc4j-meta))
         (is (= "doc" (.getString lc4j-meta "type")))
         (is (= "v1" (.getString lc4j-meta "version")))))))

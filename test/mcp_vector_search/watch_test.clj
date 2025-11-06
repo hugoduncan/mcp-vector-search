@@ -232,16 +232,18 @@
                                 wrapped-spec (-> spec
                                                  (assoc :filter
                                                         (fn [ctx event]
-                                                          (let [result (original-filter ctx event)]
+                                                          (let [result (original-filter ctx event)
+                                                                ^File file (:file event)]
                                                             (swap! filter-called conj
-                                                                   {:file (.getPath (:file event))
+                                                                   {:file (.getPath file)
                                                                     :result result})
                                                             result)))
                                                  (assoc :handler
                                                         (fn [ctx event]
-                                                          (swap! handler-called conj
-                                                                 {:file (.getPath (:file event))})
-                                                          (original-handler ctx event))))]
+                                                          (let [^File file (:file event)]
+                                                            (swap! handler-called conj
+                                                                   {:file (.getPath file)})
+                                                            (original-handler ctx event)))))]
                             (original-watch! [wrapped-spec])))]
 
             ;; Start the watch
