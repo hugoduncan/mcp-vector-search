@@ -3,6 +3,7 @@
     [clojure.test :refer [deftest testing is]]
     [mcp-vector-search.parse :as sut]))
 
+
 (deftest parse-first-ns-form-test
   ;; Test parsing ns forms from Clojure source content
   (testing "parse-first-ns-form"
@@ -50,6 +51,7 @@
             result (sut/parse-first-ns-form content)]
         (is (nil? result))))))
 
+
 (deftest extract-namespace-test
   ;; Test extracting namespace symbol from ns forms
   (testing "extract-namespace"
@@ -83,6 +85,7 @@
       (let [form :not-a-list
             result (sut/extract-namespace form)]
         (is (nil? result))))))
+
 
 (deftest extract-docstring-test
   ;; Test extracting docstrings from ns forms, handling both inline and metadata forms

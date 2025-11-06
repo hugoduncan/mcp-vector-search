@@ -18,6 +18,7 @@
     (dev.langchain4j.store.embedding.inmemory
       InMemoryEmbeddingStore)))
 
+
 (deftest files-from-path-spec-test
   ;; Test file matching and metadata capture from path specifications
   (testing "files-from-path-spec"
@@ -214,6 +215,7 @@
           (finally
             (.delete test-dir)))))))
 
+
 (deftest ingest-files-test
   ;; Test ingestion of files with their metadata into the embedding store
   (testing "ingest-files"
@@ -277,6 +279,7 @@
         (is (= 1 (:failed result)))
         (is (= 1 (count (:failures result))))
         (is (some? (:error (first (:failures result)))))))))
+
 
 (deftest ingest-test
   ;; Test end-to-end ingestion with path specs
@@ -352,6 +355,7 @@
             (is (= 0 (:failed result))))
           (finally
             (.delete test-dir)))))))
+
 
 (deftest metadata-tracking-test
   ;; Test tracking of metadata field values during ingestion
@@ -467,6 +471,7 @@
             (.delete file2)
             (.delete test-dir)))))))
 
+
 (deftest namespace-doc-embedding-test
   ;; Test :namespace-doc embedding strategy that embeds namespace docstrings
   ;; while storing full file content
@@ -501,7 +506,7 @@
         (spit test-file "(ns foo.baz)\n(defn g [] :y)")
         (try
           (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)})
+                              :embedding-store (InMemoryEmbeddingStore.)})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
@@ -521,7 +526,7 @@
         (spit test-file "just some text")
         (try
           (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)})
+                              :embedding-store (InMemoryEmbeddingStore.)})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
@@ -541,7 +546,7 @@
         (spit test-file "this is {{{ malformed [[[")
         (try
           (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)})
+                              :embedding-store (InMemoryEmbeddingStore.)})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
@@ -593,6 +598,7 @@
           (finally
             (.delete test-file)
             (.delete test-dir)))))))
+
 
 (deftest file-path-ingest-test
   ;; Test :file-path ingest strategy that stores only file paths instead of full content
@@ -702,6 +708,7 @@
             (.delete file2)
             (.delete test-dir)))))))
 
+
 (deftest process-document-test
   ;; Test the unified pipeline multimethod
   (testing "process-document multimethod"
@@ -716,9 +723,9 @@
                 content (slurp test-file)
                 metadata {:source "test"}
                 segment-descriptors (common/process-document :whole-document
-                                                          path
-                                                          content
-                                                          metadata)]
+                                                             path
+                                                             content
+                                                             metadata)]
             (is (= 1 (count segment-descriptors)))
             (let [segment (first segment-descriptors)]
               (is (= path (:file-id segment)))
@@ -743,9 +750,9 @@
                 content (slurp test-file)
                 metadata {:type "src"}
                 segment-descriptors (common/process-document :namespace-doc
-                                                          path
-                                                          content
-                                                          metadata)]
+                                                             path
+                                                             content
+                                                             metadata)]
             (is (= 1 (count segment-descriptors)))
             (let [segment (first segment-descriptors)]
               (is (= path (:file-id segment)))
@@ -772,10 +779,10 @@
                 metadata {}]
             (is (thrown-with-msg? clojure.lang.ExceptionInfo
                                   #"No namespace docstring found"
-                                  (common/process-document :namespace-doc
-                                                        path
-                                                        content
-                                                        metadata))))
+                  (common/process-document :namespace-doc
+                                           path
+                                           content
+                                           metadata))))
           (finally
             (.delete test-file)
             (.delete test-dir)))))
@@ -790,9 +797,9 @@
                 content (slurp test-file)
                 metadata {:category "docs"}
                 segment-descriptors (common/process-document :file-path
-                                                          path
-                                                          content
-                                                          metadata)]
+                                                             path
+                                                             content
+                                                             metadata)]
             (is (= 1 (count segment-descriptors)))
             (let [segment (first segment-descriptors)]
               (is (= path (:file-id segment)))
@@ -810,10 +817,10 @@
 
     (testing "multimethod dispatch on unknown strategy throws"
       (is (thrown? IllegalArgumentException
-                   (common/process-document :unknown-strategy
-                                         "path"
-                                         "content"
-                                         {}))))))
+            (common/process-document :unknown-strategy
+                                     "path"
+                                     "content"
+                                     {}))))))
 
 
 (deftest error-tracking-test
@@ -883,6 +890,7 @@
         (is (= "file5" (:file-path (first (:ingestion-failures @system-atom)))))
         ;; Last error should be file24
         (is (= "file24" (:file-path (last (:ingestion-failures @system-atom)))))))))
+
 
 (deftest statistics-tracking-test
   ;; Test ingestion statistics tracking during file processing
@@ -1020,6 +1028,7 @@
           (finally
             (.delete file1)
             (.delete test-dir)))))))
+
 
 (deftest path-captures-tracking-test
   ;; Test tracking of captured metadata values per path spec
@@ -1176,6 +1185,7 @@
             (.delete file1)
             (.delete test-dir)))))))
 
+
 (deftest multi-segment-ingestion-test
   ;; Test that ingest-file handles multiple segments correctly
   (testing "multi-segment ingestion"
@@ -1238,7 +1248,7 @@
                   (let [segment-id (common/generate-segment-id file-id idx)
                         ;; Add segment-specific metadata
                         enhanced-metadata (assoc metadata
-                                                :segment-type (if (even? idx) "even" "odd"))]
+                                                 :segment-type (if (even? idx) "even" "odd"))]
                     {:file-id file-id
                      :segment-id segment-id
                      :text-to-embed line
@@ -1277,7 +1287,7 @@
               }])
 
           (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)})
+                              :embedding-store (InMemoryEmbeddingStore.)})
                 file-maps [{:file test-file
                             :path (.getPath test-file)
                             :metadata {}
@@ -1292,6 +1302,7 @@
           (finally
             (.delete test-file)
             (.delete test-dir)))))))
+
 
 (deftest update-stats-map-test
   ;; Test pure function that updates ingestion statistics
@@ -1308,9 +1319,9 @@
                            :total-errors 0
                            :last-ingestion-at nil}
             stats-update {:files-matched 2
-                         :files-processed 1
-                         :segments-created 3
-                         :errors 1}
+                          :files-processed 1
+                          :segments-created 3
+                          :errors 1}
             timestamp (java.time.Instant/parse "2025-01-15T10:30:00Z")
             result (#'sut/update-stats-map current-stats "/test/**/*.txt" stats-update timestamp)]
         (is (= 2 (get-in result [:sources 0 :files-matched])))
@@ -1330,9 +1341,9 @@
                            :total-errors 0
                            :last-ingestion-at nil}
             stats-update {:files-matched 3
-                         :files-processed 2
-                         :segments-created 4
-                         :errors 1}
+                          :files-processed 2
+                          :segments-created 4
+                          :errors 1}
             timestamp (java.time.Instant/now)
             result (#'sut/update-stats-map initial-stats "/src/**/*.clj" stats-update timestamp)]
         (is (= 8 (get-in result [:sources 0 :files-matched])))
@@ -1347,8 +1358,8 @@
                            :total-errors 2
                            :last-ingestion-at nil}
             stats-update {:files-processed 5
-                         :segments-created 8
-                         :errors 1}
+                          :segments-created 8
+                          :errors 1}
             timestamp (java.time.Instant/now)
             result (#'sut/update-stats-map current-stats "/test/*" stats-update timestamp)]
         (is (= 15 (:total-documents result)))
@@ -1371,9 +1382,9 @@
                            :total-errors 0
                            :last-ingestion-at nil}
             stats-update {:files-matched 2
-                         :files-processed 2
-                         :segments-created 4
-                         :errors 0}
+                          :files-processed 2
+                          :segments-created 4
+                          :errors 0}
             timestamp (java.time.Instant/now)
             result (#'sut/update-stats-map current-stats "/src/**/*.clj" stats-update timestamp)]
         (is (= 7 (get-in result [:sources 0 :files-matched])))
@@ -1423,6 +1434,7 @@
             _result (#'sut/update-stats-map current-stats "/test/*" stats-update timestamp)]
         (is (= 0 (get-in current-stats [:sources 0 :files-matched])))
         (is (= original-sources (:sources current-stats)))))))
+
 
 (deftest classpath-resource-discovery-test
   ;; Test classpath resource enumeration and ingestion
@@ -1501,7 +1513,7 @@
 
     (testing "ingests classpath resource into embedding store"
       (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                    :embedding-store (InMemoryEmbeddingStore.)})
+                          :embedding-store (InMemoryEmbeddingStore.)})
             file-maps [{:file nil
                         :path "classpath_test/docs/api/auth.md"
                         :metadata {:category "api"}
@@ -1518,7 +1530,7 @@
         (spit test-file "filesystem content")
         (try
           (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                        :embedding-store (InMemoryEmbeddingStore.)})
+                              :embedding-store (InMemoryEmbeddingStore.)})
                 config {:path-specs
                         [{:segments [{:type :literal :value (.getPath test-file)}]
                           :base-path (.getPath test-file)
@@ -1537,7 +1549,7 @@
 
     (testing "validates classpath resource readability"
       (let [system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                    :embedding-store (InMemoryEmbeddingStore.)})
+                          :embedding-store (InMemoryEmbeddingStore.)})
             file-maps [{:file nil
                         :path "nonexistent/path.md"
                         :metadata {:category "test"}

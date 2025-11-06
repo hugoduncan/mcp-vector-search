@@ -1,0 +1,135 @@
+name: Tests
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: 21
+
+    - name: Install Clojure tools
+      uses: DeLaGuardo/setup-clojure@12.5
+      with:
+        cli: latest
+        cljstyle: 0.17.642
+        clj-kondo: latest
+
+    - name: Cache Clojure dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.m2/repository
+          ~/.gitlibs
+          ~/.clojure
+        key: ${{ runner.os }}-clojure-${{ hashFiles('**/deps.edn') }}
+        restore-keys: |
+          ${{ runner.os }}-clojure-
+
+    - name: Check code style
+      run: cljstyle check
+
+    - name: Check for reflection warnings
+      run: |
+        clojure -M:dev scripts/check-reflection.clj 2>&1 | tee reflection-warnings.log
+
+        if grep -q "Reflection warning" reflection-warnings.log; then
+          echo "❌ Reflection warnings found!"
+          grep "Reflection warning" reflection-warnings.log
+          exit 1
+        else
+          echo "✅ No reflection warnings found"
+        fi
+
+    - name: Run clj-kondo lint
+      run: clj-kondo --lint src test --fail-level warning
+
+  unit-test:
+    runs-on: ubuntu-latest
+    needs: [lint]
+    env:
+      JAVA_TOOL_OPTIONS: "-Dclojure.main.report=stderr --enable-native-access=ALL-UNNAMED"
+
+    strategy:
+      matrix:
+        java: [21, 25]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: ${{ matrix.java }}
+
+    - name: Install Clojure tools
+      uses: DeLaGuardo/setup-clojure@12.5
+      with:
+        cli: latest
+
+    - name: Cache Clojure dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.m2/repository
+          ~/.gitlibs
+          ~/.clojure
+        key: ${{ runner.os }}-clojure-${{ hashFiles('**/deps.edn') }}
+        restore-keys: |
+          ${{ runner.os }}-clojure-
+
+    - name: Run unit tests
+      run: clojure -M:dev:test --focus :unit
+
+  integration-test:
+    runs-on: ubuntu-latest
+    needs: [lint]
+    env:
+      JAVA_TOOL_OPTIONS: "-Dclojure.main.report=stderr --enable-native-access=ALL-UNNAMED"
+
+    strategy:
+      matrix:
+        java: [21, 25]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: ${{ matrix.java }}
+
+    - name: Install Clojure tools
+      uses: DeLaGuardo/setup-clojure@12.5
+      with:
+        cli: latest
+
+    - name: Cache Clojure dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.m2/repository
+          ~/.gitlibs
+          ~/.clojure
+        key: ${{ runner.os }}-clojure-${{ hashFiles('**/deps.edn') }}
+        restore-keys: |
+          ${{ runner.os }}-clojure-
+
+    - name: Run integration tests
+      run: clojure -M:dev:test --focus :integration

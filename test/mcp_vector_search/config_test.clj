@@ -5,6 +5,7 @@
     [clojure.test :refer [deftest testing is]]
     [mcp-vector-search.config :as sut]))
 
+
 (deftest load-config-test
   ;; Test loading EDN configuration files from filesystem and classpath
   (testing "load-config"
@@ -40,7 +41,7 @@
 
     (testing "throws when config not found"
       (is (thrown-with-msg? Exception #"No configuration file found"
-                            (sut/load-config "/nonexistent/config.edn"))))
+            (sut/load-config "/nonexistent/config.edn"))))
 
     (testing "handles nested structures"
       (let [test-file (io/file "test/mcp_vector_search/test-resources/config_test/nested.edn")]
@@ -51,6 +52,7 @@
             (is (= 123 (get-in result [:outer :inner :value]))))
           (finally
             (.delete test-file)))))))
+
 
 (deftest parse-path-spec-test
   ;; Test parsing path specifications with literals, globs, and named captures
@@ -155,6 +157,7 @@
     (testing "throws on invalid regex in capture"
       (is (thrown? Exception (sut/parse-path-spec "/(?<ver>[[[)/file"))))))
 
+
 (deftest process-config-test
   ;; Test processing user config into internal format
   (testing "process-config"
@@ -201,14 +204,14 @@
                                  :ingest :single-segment
                                  :content-strategy :whole-document}]}]
           (is (thrown-with-msg? Exception #"Missing :embedding key"
-                                (sut/process-config config)))))
+                (sut/process-config config)))))
 
       (testing "throws when :content-strategy is missing"
         (let [config {:sources [{:path "/docs/*.md"
                                  :ingest :single-segment
                                  :embedding :whole-document}]}]
           (is (thrown-with-msg? Exception #"Missing :content-strategy key"
-                                (sut/process-config config)))))
+                (sut/process-config config)))))
 
       (testing "succeeds when both :embedding and :content-strategy are present"
         (let [config {:sources [{:path "/docs/*.md"
@@ -235,12 +238,12 @@
         (let [config {:sources [{:path "/docs/*.md"
                                  :class-path "docs/*.md"}]}]
           (is (thrown-with-msg? Exception #"cannot have both :path and :class-path"
-                                (sut/process-config config)))))
+                (sut/process-config config)))))
 
       (testing "rejects sources with neither :path nor :class-path"
         (let [config {:sources [{:name "Test"}]}]
           (is (thrown-with-msg? Exception #"must have either :path or :class-path"
-                                (sut/process-config config)))))
+                (sut/process-config config)))))
 
       (testing "accepts :class-path sources"
         (let [config {:sources [{:class-path "docs/*.md"}]}
@@ -248,25 +251,26 @@
           (is (= 1 (count (:path-specs result))))
           (is (= :classpath (get-in result [:path-specs 0 :source-type])))))))
 
-    (testing ":source-type assignment"
-      (testing "assigns :filesystem for :path sources"
-        (let [config {:sources [{:path "/docs/*.md"}]}
-              result (sut/process-config config)]
-          (is (= :filesystem (get-in result [:path-specs 0 :source-type])))))
-
-      (testing "assigns :classpath for :class-path sources"
-        (let [config {:sources [{:class-path "docs/*.md"}]}
-              result (sut/process-config config)]
-          (is (= :classpath (get-in result [:path-specs 0 :source-type])))))))
-
-    (testing "mixed filesystem and classpath sources"
-      (let [config {:sources [{:path "/local/docs/*.md"
-                               :name "Local"}
-                              {:class-path "embedded/docs/*.md"
-                               :name "Embedded"}]}
+  (testing ":source-type assignment"
+    (testing "assigns :filesystem for :path sources"
+      (let [config {:sources [{:path "/docs/*.md"}]}
             result (sut/process-config config)]
-        (is (= 2 (count (:path-specs result))))
-        (is (= :filesystem (get-in result [:path-specs 0 :source-type])))
-        (is (= :classpath (get-in result [:path-specs 1 :source-type])))
-        (is (= "Local" (get-in result [:path-specs 0 :base-metadata :name])))
-        (is (= "Embedded" (get-in result [:path-specs 1 :base-metadata :name])))))
+        (is (= :filesystem (get-in result [:path-specs 0 :source-type])))))
+
+    (testing "assigns :classpath for :class-path sources"
+      (let [config {:sources [{:class-path "docs/*.md"}]}
+            result (sut/process-config config)]
+        (is (= :classpath (get-in result [:path-specs 0 :source-type])))))))
+
+
+(testing "mixed filesystem and classpath sources"
+  (let [config {:sources [{:path "/local/docs/*.md"
+                           :name "Local"}
+                          {:class-path "embedded/docs/*.md"
+                           :name "Embedded"}]}
+        result (sut/process-config config)]
+    (is (= 2 (count (:path-specs result))))
+    (is (= :filesystem (get-in result [:path-specs 0 :source-type])))
+    (is (= :classpath (get-in result [:path-specs 1 :source-type])))
+    (is (= "Local" (get-in result [:path-specs 0 :base-metadata :name])))
+    (is (= "Embedded" (get-in result [:path-specs 1 :base-metadata :name])))))

@@ -87,7 +87,7 @@
   [element element-name]
   (if-let [doc (:doc element)]
     (let [trimmed (str/trim doc)]
-      (if (seq trimmed)
+      (if (not (empty? trimmed))
         doc
         element-name))
     element-name))
@@ -186,7 +186,7 @@
 
 
 (defmethod common/process-document :code-analysis
-  [_strategy path _content metadata]
+  [_strategy path content metadata]
   (let [config (parse-config metadata path)
         analysis (run-analysis path)]
     ;; Check for analysis errors

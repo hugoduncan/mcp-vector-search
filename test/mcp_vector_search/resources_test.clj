@@ -7,7 +7,8 @@
     (java.time
       Instant)))
 
-;;; Test Fixtures
+
+;; Test Fixtures
 
 (defn create-test-system
   "Create a test system atom with sample data."
@@ -28,32 +29,33 @@
                                   :segments-created 50
                                   :errors 1}]}
      :ingestion-failures [{:file-path "/docs/broken.md"
-                          :error-type :read-error
-                          :message "File not found"
-                          :source-path "**/*.md"
-                          :timestamp (Instant/parse "2025-01-15T10:29:00Z")}
-                         {:file-path "/data/bad.txt"
-                          :error-type :parse-error
-                          :message "Invalid format"
-                          :source-path "**/*.txt"
-                          :timestamp (Instant/parse "2025-01-15T10:31:00Z")}]
+                           :error-type :read-error
+                           :message "File not found"
+                           :source-path "**/*.md"
+                           :timestamp (Instant/parse "2025-01-15T10:29:00Z")}
+                          {:file-path "/data/bad.txt"
+                           :error-type :parse-error
+                           :message "Invalid format"
+                           :source-path "**/*.txt"
+                           :timestamp (Instant/parse "2025-01-15T10:31:00Z")}]
      :path-captures {:path-specs [{:path "/docs/(?<cat>[^/]+)/*.md"
                                    :captures {:cat #{"api" "guide"}}}
                                   {:path "/src/(?<ns>[^/]+)/*.clj"
                                    :captures {:ns #{"core" "util"}}}]}
      :watch-stats {:enabled? true
-                         :sources [{:path "/docs/**/*.md"
-                                    :watching? true}
-                                   {:path "/data/**/*.txt"
-                                    :watching? false}]
-                         :events {:created 5
-                                  :modified 10
-                                  :deleted 2
-                                  :last-event-at (Instant/parse "2025-01-15T11:00:00Z")}
-                         :debounce {:queued 8
-                                    :processed 17}}}))
+                   :sources [{:path "/docs/**/*.md"
+                              :watching? true}
+                             {:path "/data/**/*.txt"
+                              :watching? false}]
+                   :events {:created 5
+                            :modified 10
+                            :deleted 2
+                            :last-event-at (Instant/parse "2025-01-15T11:00:00Z")}
+                   :debounce {:queued 8
+                              :processed 17}}}))
 
-;;; Tests
+
+;; Tests
 
 (deftest test-resource-definitions
   ;; Test that resource-definitions returns all 5 resources with correct structure
@@ -81,6 +83,7 @@
           (is (= "application/json" (:mime-type resource)))
           (is (string? (:uri resource)))
           (is (re-matches #"ingestion://.*" (:uri resource))))))))
+
 
 (deftest test-ingestion-status-resource
   ;; Test ingestion://status resource returns valid JSON with correct data
@@ -110,6 +113,7 @@
         (is (= 2 (:total-errors data)))
         (is (string? (:last-ingestion-at data)))))))
 
+
 (deftest test-ingestion-stats-resource
   ;; Test ingestion://stats resource returns per-source statistics
   (testing "ingestion-stats resource"
@@ -137,6 +141,7 @@
         (is (= 18 (:files-processed first-source)))
         (is (= 50 (:segments-created first-source)))
         (is (= 1 (:errors first-source)))))))
+
 
 (deftest test-ingestion-failures-resource
   ;; Test ingestion://failures resource returns error list
@@ -166,6 +171,7 @@
         (is (= "**/*.md" (:source-path first-failure)))
         (is (string? (:timestamp first-failure)))))))
 
+
 (deftest test-path-metadata-resource
   ;; Test ingestion://metadata resource returns path captures
   (testing "path-metadata resource"
@@ -190,6 +196,7 @@
             first-spec (first (:path-specs data))]
         (is (= "/docs/(?<cat>[^/]+)/*.md" (:path first-spec)))
         (is (contains? first-spec :captures))))))
+
 
 (deftest test-watch-stats-resource
   ;; Test ingestion://watch-stats resource returns watch statistics
@@ -222,15 +229,16 @@
         (is (= 8 (get-in data [:debounce :queued])))
         (is (= 17 (get-in data [:debounce :processed])))))))
 
+
 (deftest test-error-handling
   ;; Test error handling for malformed system state
   (testing "error handling"
     (testing "handles missing system data gracefully"
       (let [empty-system (atom {:ingestion-stats {:total-documents 0
-                                                   :total-segments 0
-                                                   :total-errors 0
-                                                   :last-ingestion-at nil
-                                                   :sources []}
+                                                  :total-segments 0
+                                                  :total-errors 0
+                                                  :last-ingestion-at nil
+                                                  :sources []}
                                 :ingestion-failures []
                                 :path-captures {:path-specs []}
                                 :watch-stats {:enabled? false

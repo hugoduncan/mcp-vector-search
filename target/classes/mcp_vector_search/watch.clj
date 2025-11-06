@@ -37,7 +37,10 @@
     (java.time
       Instant)
     (java.util
-      Timer)))
+      Timer)
+    (java.util.regex
+      Matcher
+      Pattern)))
 
 
 ;; Debouncing

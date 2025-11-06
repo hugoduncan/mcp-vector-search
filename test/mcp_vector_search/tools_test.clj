@@ -13,6 +13,7 @@
     (dev.langchain4j.store.embedding.inmemory
       InMemoryEmbeddingStore)))
 
+
 (deftest search-tool-test
   ;; Test search tool specification and implementation with actual embeddings
   (testing "search-tool"
@@ -178,6 +179,7 @@
                 parsed-results (json/read-str content-text)]
             (is (= 1 (count parsed-results)))
             (is (= doc3 (get (first parsed-results) "content")))))))))
+
 
 (deftest metadata-schema-test
   ;; Test dynamic metadata schema generation from discovered metadata values

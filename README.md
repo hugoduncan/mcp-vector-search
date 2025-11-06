@@ -320,6 +320,10 @@ Contributions welcome! Please:
 3. Add tests for new features
 4. Update documentation
 
+### Releasing
+
+See [doc/releasing.md](doc/releasing.md) for the release process and version scheme.
+
 ## Documentation
 
 - **[doc/about.md](doc/about.md)** - Project purpose, problem/solution, use cases

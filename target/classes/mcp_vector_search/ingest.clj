@@ -40,10 +40,16 @@
     [mcp-vector-search.ingest.single-segment]
     [mcp-vector-search.util :as util])
   (:import
+    (dev.langchain4j.data.document
+      Metadata)
+    (dev.langchain4j.data.embedding
+      Embedding)
     (dev.langchain4j.data.segment
       TextSegment)
     (dev.langchain4j.model.embedding
       EmbeddingModel)
+    (dev.langchain4j.store.embedding
+      EmbeddingStore)
     (dev.langchain4j.store.embedding.inmemory
       InMemoryEmbeddingStore)
     (io.github.classgraph
@@ -52,7 +58,10 @@
       File
       IOException)
     (java.time
-      Instant)))
+      Instant)
+    (java.util.regex
+      Matcher
+      Pattern)))
 
 
 (defn- walk-files

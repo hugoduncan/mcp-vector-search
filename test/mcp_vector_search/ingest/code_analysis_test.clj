@@ -5,6 +5,7 @@
     [mcp-vector-search.ingest.code-analysis :as sut]
     [mcp-vector-search.ingest.common :as common]))
 
+
 (deftest process-document-test
   ;; Test clj-kondo integration for analyzing Clojure source files
   (testing "process-document with :code-analysis strategy"
@@ -74,13 +75,13 @@
         (let [test-file "test/resources/code_analysis_test/sample.clj"]
           (is (thrown-with-msg? clojure.lang.ExceptionInfo
                                 #"Invalid :visibility"
-                                (common/process-document :code-analysis test-file nil {:visibility :invalid})))))
+                (common/process-document :code-analysis test-file nil {:visibility :invalid})))))
 
       (testing "throws ex-info for invalid element-types"
         (let [test-file "test/resources/code_analysis_test/sample.clj"]
           (is (thrown-with-msg? clojure.lang.ExceptionInfo
                                 #"Invalid :element-types"
-                                (common/process-document :code-analysis test-file nil {:element-types "not-a-set"}))))))
+                (common/process-document :code-analysis test-file nil {:element-types "not-a-set"}))))))
 
     (testing "docstring vs element name fallback"
       (let [test-file "test/resources/code_analysis_test/nodoc.clj"
@@ -110,6 +111,7 @@
           (let [parsed (read-string (:content-to-store first-segment))]
             (is (map? parsed))
             (is (contains? parsed :name))))))))
+
 
 (deftest java-analysis-test
   ;; Test Java file analysis using clj-kondo
@@ -164,6 +166,7 @@
             (is (some #(= % "test.Sample.publicField") element-names))
             (is (some #(= % "test.Sample.publicMethod") element-names))))))))
 
+
 (deftest constructor-detection-test
   ;; Test that Java constructors are properly detected and typed
   (testing "constructor detection"
@@ -201,6 +204,7 @@
             (is (= #{"constructor"} types)
                 "All elements should be constructors")))))))
 
+
 (deftest error-handling-test
   ;; Test handling of files with syntax errors
   (testing "error handling for invalid files"
@@ -215,6 +219,7 @@
             result (common/process-document :code-analysis test-file nil {})]
         (testing "returns empty sequence for non-existent file"
           (is (empty? result)))))))
+
 
 (deftest nil-namespace-handling-test
   ;; Test that elements without namespace/package don't include :namespace in metadata
@@ -236,6 +241,7 @@
           (let [all-metadata (map :metadata result)]
             (is (every? #(not= "nil" (:namespace %)) all-metadata)
                 "No metadata should have 'nil' as namespace value")))))))
+
 
 (deftest edge-case-test
   ;; Test edge cases for visibility filtering and element-types filtering

@@ -21,6 +21,7 @@
     (dev.langchain4j.store.embedding.inmemory
       InMemoryEmbeddingStore)))
 
+
 (defn- count-embeddings
   "Count embeddings in the store."
   [embedding-store embedding-model]
@@ -31,6 +32,7 @@
                     (.build))
         results (.search embedding-store request)]
     (count (.matches results))))
+
 
 (defn- count-embeddings-by-file-id
   "Count embeddings with a specific file-id in the store."
@@ -45,7 +47,8 @@
         results (.search embedding-store request)]
     (count (.matches results))))
 
-;;; Test strategy for multi-segment files
+
+;; Test strategy for multi-segment files
 
 ;; Define at load time to ensure it's available for all test runs
 (defmethod common/process-document :test-watch-multi-segment
@@ -70,6 +73,7 @@
              :content-to-store line
              :metadata enhanced-metadata}))
         lines))))
+
 
 (deftest re-indexing-logic-test
   ;; Test re-indexing logic that would be triggered by watch events
@@ -189,6 +193,7 @@
           (finally
             (fs/delete-tree temp-dir)))))))
 
+
 (deftest multi-segment-watch-test
   ;; Test watch operations with multi-segment files
 
@@ -219,8 +224,8 @@
 
             ;; All segments should have the same file-id
             (is (= 3 (count-embeddings-by-file-id (:embedding-store @system)
-                                                   (:embedding-model @system)
-                                                   canonical-path))))
+                                                  (:embedding-model @system)
+                                                  canonical-path))))
           (finally
             (fs/delete-tree temp-dir)))))
 
@@ -246,9 +251,9 @@
 
             ;; Simulate MODIFY: remove all segments with file-id
             (let [removed-count (#'watch/remove-by-file-id
-                                  (:embedding-store @system)
-                                  (:embedding-model @system)
-                                  canonical-path)]
+                                 (:embedding-store @system)
+                                 (:embedding-model @system)
+                                 canonical-path)]
               (is (= 3 removed-count) "Should remove all 3 segments"))
 
             ;; Verify all segments removed
@@ -287,9 +292,9 @@
 
             ;; Simulate DELETE: remove all segments with file-id
             (let [removed-count (#'watch/remove-by-file-id
-                                  (:embedding-store @system)
-                                  (:embedding-model @system)
-                                  canonical-path)]
+                                 (:embedding-store @system)
+                                 (:embedding-model @system)
+                                 canonical-path)]
               (is (= 4 removed-count) "Should remove all 4 segments"))
 
             ;; Verify all segments removed
@@ -297,6 +302,7 @@
                                          (:embedding-model @system)))))
           (finally
             (fs/delete-tree temp-dir)))))))
+
 
 (deftest chunked-pipeline-watch-test
   ;; Test watch operations with chunked pipeline strategy
@@ -341,8 +347,8 @@
             (is (= (count-embeddings (:embedding-store @system)
                                      (:embedding-model @system))
                    (count-embeddings-by-file-id (:embedding-store @system)
-                                                 (:embedding-model @system)
-                                                 canonical-path))
+                                                (:embedding-model @system)
+                                                canonical-path))
                 "All chunks should share the same file-id"))
           (finally
             (fs/delete-tree temp-dir)))))
@@ -376,9 +382,9 @@
 
               ;; Simulate MODIFY: remove all chunks by file-id
               (let [removed-count (#'watch/remove-by-file-id
-                                    (:embedding-store @system)
-                                    (:embedding-model @system)
-                                    canonical-path)]
+                                   (:embedding-store @system)
+                                   (:embedding-model @system)
+                                   canonical-path)]
                 (is (= initial-count removed-count)
                     (str "Should remove all " initial-count " chunks, removed " removed-count)))
 
@@ -431,9 +437,9 @@
 
               ;; Simulate DELETE: remove all chunks by file-id
               (let [removed-count (#'watch/remove-by-file-id
-                                    (:embedding-store @system)
-                                    (:embedding-model @system)
-                                    canonical-path)]
+                                   (:embedding-store @system)
+                                   (:embedding-model @system)
+                                   canonical-path)]
                 (is (= chunk-count removed-count)
                     (str "Should remove all " chunk-count " chunks, removed " removed-count)))
 

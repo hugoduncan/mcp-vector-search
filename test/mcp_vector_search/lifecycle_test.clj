@@ -6,6 +6,7 @@
     (dev.langchain4j.store.embedding.inmemory
       InMemoryEmbeddingStore)))
 
+
 (deftest lifecycle-test
   ;; Test lifecycle management of the system with embedding model and store.
   ;; Note: Full initialization may fail on some platforms due to native library issues.

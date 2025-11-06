@@ -14,6 +14,7 @@
     (dev.langchain4j.store.embedding.inmemory
       InMemoryEmbeddingStore)))
 
+
 (deftest end-to-end-integration-test
   ;; Test complete pipeline from config to search results
   (testing "end-to-end integration"
@@ -190,6 +191,7 @@
                   (is (re-find #"v2|API" (get (first v2-results) "content")))))))
           (finally
             (fs/delete-tree temp-dir)))))))
+
 
 (deftest resource-integration-test
   ;; Test MCP resource discoverability and readability

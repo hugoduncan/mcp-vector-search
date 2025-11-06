@@ -11,6 +11,7 @@
     (dev.langchain4j.store.embedding.inmemory
       InMemoryEmbeddingStore)))
 
+
 (deftest chunked-document-test
   ;; Test :chunked pipeline strategy for splitting documents into chunks
   (testing "chunked document strategy"
@@ -25,9 +26,9 @@
           (let [path (.getPath test-file)
                 metadata {:source "test"}
                 segment-descriptors (common/process-document :chunked
-                                                          path
-                                                          content
-                                                          metadata)]
+                                                             path
+                                                             content
+                                                             metadata)]
             (is (= 1 (count segment-descriptors)))
             (let [segment (first segment-descriptors)]
               (is (= path (:file-id segment)))
@@ -57,9 +58,9 @@
           (let [path (.getPath test-file)
                 metadata {}
                 segment-descriptors (common/process-document :chunked
-                                                          path
-                                                          content
-                                                          metadata)]
+                                                             path
+                                                             content
+                                                             metadata)]
             ;; Should produce multiple chunks
             (is (> (count segment-descriptors) 1))
             ;; Verify all chunks have the same chunk-count
@@ -86,9 +87,9 @@
           (let [path (.getPath test-file)
                 metadata {:category "docs" :version "v1"}
                 segment-descriptors (common/process-document :chunked
-                                                          path
-                                                          content
-                                                          metadata)]
+                                                             path
+                                                             content
+                                                             metadata)]
             ;; All segments should have required chunk metadata
             (doseq [segment segment-descriptors]
               (is (contains? (:metadata segment) :doc-id))
@@ -114,9 +115,9 @@
           (let [path (.getPath test-file)
                 metadata {}
                 segment-descriptors (common/process-document :chunked
-                                                          path
-                                                          content
-                                                          metadata)
+                                                             path
+                                                             content
+                                                             metadata)
                 segment-ids (map :segment-id segment-descriptors)]
             ;; All segment IDs should be unique
             (is (= (count segment-ids) (count (set segment-ids))))
@@ -137,9 +138,9 @@
                 ;; Use smaller chunk size to force more chunks
                 metadata {:chunk-size 100 :chunk-overlap 20}
                 segment-descriptors (common/process-document :chunked
-                                                          path
-                                                          content
-                                                          metadata)]
+                                                             path
+                                                             content
+                                                             metadata)]
             ;; With smaller chunk size, should produce multiple chunks
             (is (> (count segment-descriptors) 1)))
           (finally
@@ -156,9 +157,9 @@
           (let [path (.getPath test-file)
                 metadata {}
                 segment-descriptors (common/process-document :chunked
-                                                          path
-                                                          content
-                                                          metadata)]
+                                                             path
+                                                             content
+                                                             metadata)]
             ;; First chunk should start at offset 0
             (is (= 0 (get-in (first segment-descriptors) [:metadata :chunk-offset])))
             ;; Verify each chunk's content matches the substring at its offset
@@ -176,6 +177,7 @@
             (.delete test-file)
             (.delete test-dir)))))))
 
+
 (deftest chunk-overlap-and-metadata-test
   ;; Test chunk overlap behavior and metadata propagation for :chunked strategy
   (testing "chunk overlap and metadata propagation"
@@ -192,9 +194,9 @@
           (let [path (.getPath test-file)
                 metadata {:chunk-size 512 :chunk-overlap 100}
                 segment-descriptors (common/process-document :chunked
-                                                          path
-                                                          content
-                                                          metadata)]
+                                                             path
+                                                             content
+                                                             metadata)]
             ;; Should produce multiple chunks
             (is (> (count segment-descriptors) 1)
                 "Content should be split into multiple chunks")
@@ -234,9 +236,9 @@
                                :chunk-size 200
                                :chunk-overlap 50}
                 segment-descriptors (common/process-document :chunked
-                                                          path
-                                                          content
-                                                          base-metadata)]
+                                                             path
+                                                             content
+                                                             base-metadata)]
             ;; Should produce multiple chunks
             (is (> (count segment-descriptors) 1))
             ;; All chunks should have base metadata
@@ -274,9 +276,9 @@
                 full-metadata (merge (:metadata file-map)
                                      {:chunk-size 200 :chunk-overlap 50})
                 segment-descriptors (common/process-document :chunked
-                                                          path
-                                                          content
-                                                          full-metadata)]
+                                                             path
+                                                             content
+                                                             full-metadata)]
             ;; Should produce multiple chunks
             (is (> (count segment-descriptors) 1))
             ;; All chunks should have captures from path spec
@@ -309,9 +311,9 @@
                 file-map (first file-maps)
                 path (:path file-map)
                 segment-descriptors (common/process-document :chunked
-                                                          path
-                                                          content
-                                                          (:metadata file-map))]
+                                                             path
+                                                             content
+                                                             (:metadata file-map))]
             ;; Should produce multiple chunks
             (is (> (count segment-descriptors) 1))
             ;; All chunks should have :name from source config
@@ -321,6 +323,7 @@
           (finally
             (.delete test-file)
             (.delete test-dir)))))))
+
 
 (deftest validate-chunk-config-test
   ;; Test validation of chunk configuration parameters

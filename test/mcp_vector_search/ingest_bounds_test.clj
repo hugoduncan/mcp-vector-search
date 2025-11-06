@@ -8,6 +8,7 @@
     (dev.langchain4j.store.embedding.inmemory
       InMemoryEmbeddingStore)))
 
+
 (deftest sources-bounds-checking-test
   ;; Test that per-source statistics initialization has bounds checking
   (testing "sources bounds checking during initialization"
@@ -19,9 +20,10 @@
                                             :total-documents 0
                                             :total-segments 0
                                             :total-errors 0}})
-            path-specs (mapv (fn [i] {:path (str "/nonexistent/test" i "/*")
-                                      :segments []
-                                      :base-path "/nonexistent"})
+            path-specs (mapv (fn [i]
+                               {:path (str "/nonexistent/test" i "/*")
+                                :segments []
+                                :base-path "/nonexistent"})
                              (range 10))]
         (with-redefs [sut/files-from-path-spec (constantly [])]
           (sut/ingest system {:path-specs path-specs})
@@ -35,9 +37,10 @@
                                             :total-documents 0
                                             :total-segments 0
                                             :total-errors 0}})
-            path-specs (mapv (fn [i] {:path (str "/nonexistent/test" i "/*")
-                                      :segments []
-                                      :base-path "/nonexistent"})
+            path-specs (mapv (fn [i]
+                               {:path (str "/nonexistent/test" i "/*")
+                                :segments []
+                                :base-path "/nonexistent"})
                              (range (+ max-sources-value 10)))]
         (with-redefs [sut/files-from-path-spec (constantly [])]
           (sut/ingest system {:path-specs path-specs})

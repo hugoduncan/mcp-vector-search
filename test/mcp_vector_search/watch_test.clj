@@ -3,8 +3,8 @@
     [babashka.fs :as fs]
     [clojure.test :refer [deftest testing is]]
     [hawk.core :as hawk]
-    [mcp-vector-search.watch :as watch]
-    [mcp-vector-search.config :as config])
+    [mcp-vector-search.config :as config]
+    [mcp-vector-search.watch :as watch])
   (:import
     (dev.langchain4j.model.embedding.onnx.allminilml6v2
       AllMiniLmL6V2EmbeddingModel)
@@ -12,6 +12,7 @@
       InMemoryEmbeddingStore)
     (java.io
       File)))
+
 
 (deftest watch-configuration-test
   ;; Test that watch configuration is properly handled in config processing
@@ -52,6 +53,7 @@
             result (config/process-config cfg)]
         (is (not (contains? (-> result :path-specs first :base-metadata) :watch?)))))))
 
+
 (deftest path-matching-test
   ;; Test that file paths are correctly matched against path specs
 
@@ -89,6 +91,7 @@
         (is (true? (#'watch/matches-path-spec? "/docs/v2/guide.md" segments)))
         (is (false? (#'watch/matches-path-spec? "/docs/latest/readme.md" segments)))))))
 
+
 (deftest recursive-watch-detection-test
   ;; Test detection of whether watching should be recursive
 
@@ -123,6 +126,7 @@
                       {:type :literal :value ".md"}]
             base-path "/docs/"]
         (is (true? (#'watch/should-watch-recursively? segments base-path)))))))
+
 
 (deftest watch-event-firing-test
   ;; Test that watch events actually fire when files are created/modified/deleted
@@ -240,38 +244,39 @@
                                                           (original-handler ctx event))))]
                             (original-watch! [wrapped-spec])))]
 
-          ;; Start the watch
-          (let [watchers (watch/start-watches system parsed-config)]
+            ;; Start the watch
+            (let [watchers (watch/start-watches system parsed-config)]
 
-            (try
-              ;; Give watch time to start
-              (Thread/sleep 200)
+              (try
+                ;; Give watch time to start
+                (Thread/sleep 200)
 
-              ;; Create a file
-              (let [test-file (fs/file temp-dir "test.md")]
-                (spit test-file "Test content"))
+                ;; Create a file
+                (let [test-file (fs/file temp-dir "test.md")]
+                  (spit test-file "Test content"))
 
-              ;; Wait for processing
-              (Thread/sleep 1000)
+                ;; Wait for processing
+                (Thread/sleep 1000)
 
-              ;; Check if filter was called
-              (is (pos? (count @filter-called))
-                  (str "Filter should be called. Filter calls: " @filter-called))
+                ;; Check if filter was called
+                (is (pos? (count @filter-called))
+                    (str "Filter should be called. Filter calls: " @filter-called))
 
-              ;; Check if any filter calls returned true
-              (let [accepted (filter :result @filter-called)]
-                (is (pos? (count accepted))
-                    (str "At least one file should pass filter. Accepted: " accepted)))
+                ;; Check if any filter calls returned true
+                (let [accepted (filter :result @filter-called)]
+                  (is (pos? (count accepted))
+                      (str "At least one file should pass filter. Accepted: " accepted)))
 
-              ;; Check if handler was called
-              (is (pos? (count @handler-called))
-                  (str "Handler should be called. Handler calls: " @handler-called))
+                ;; Check if handler was called
+                (is (pos? (count @handler-called))
+                    (str "Handler should be called. Handler calls: " @handler-called))
 
-              (finally
-                (watch/stop-watches watchers))))))
+                (finally
+                  (watch/stop-watches watchers))))))
 
         (finally
           (fs/delete-tree temp-dir))))))
+
 
 (deftest classpath-source-filtering-test
   ;; Test that classpath sources are excluded from file watching
@@ -342,6 +347,7 @@
 
       ;; No watchers should be created
       (is (empty? watchers)))))
+
 
 (deftest watch-statistics-test
   ;; Test that watch statistics are properly tracked during watch operations
@@ -463,4 +469,3 @@
 
         (finally
           (fs/delete-tree temp-dir))))))
-

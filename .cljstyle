@@ -1,5 +1,6 @@
 ;; -*- mode: clojure -*-
-{:files {:extensions #{".clj" ".cljs" ".cljc" ".edn"}}
+{:files {:extensions #{".clj" ".cljs" ".cljc" ".edn"}
+         :ignore #{#"test/resources/code_analysis_test/error\.clj"}}}
  :rules {:blank-lines {:max-consecutive   1
                        :trim-consecutive? true
                        :padding-lines     1

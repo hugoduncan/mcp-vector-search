@@ -21,6 +21,7 @@
     (dev.langchain4j.store.embedding.inmemory
       InMemoryEmbeddingStore)))
 
+
 (defn count-embeddings
   "Count total embeddings in the store."
   [embedding-store embedding-model]
@@ -31,6 +32,7 @@
                     (.build))
         results (.search embedding-store request)]
     (count (.matches results))))
+
 
 (defn -main
   [& args]
@@ -54,7 +56,7 @@
       (println "3. Delete files")
       (println "4. Press Ctrl+C to exit and clean up")
       (println "\nCurrent count:" (count-embeddings (:embedding-store system)
-                                                     (:embedding-model system)))
+                                                    (:embedding-model system)))
 
       (try
         ;; Keep running and periodically show count

@@ -1,7 +1,11 @@
 (ns mcp-vector-search.ingest.common-test
-  (:require [clojure.test :refer [deftest is testing]]
-            [mcp-vector-search.ingest.common :as sut])
-  (:import [dev.langchain4j.data.document Metadata]))
+  (:require
+    [clojure.test :refer [deftest is testing]]
+    [mcp-vector-search.ingest.common :as sut])
+  (:import
+    (dev.langchain4j.data.document
+      Metadata)))
+
 
 (deftest generate-segment-id-test
   ;; Test segment ID generation for single and multi-segment documents
@@ -15,6 +19,7 @@
       (is (= "path/file.txt#0" (sut/generate-segment-id "path/file.txt" 0)))
       (is (= "path/file.txt#5" (sut/generate-segment-id "path/file.txt" 5))))))
 
+
 (deftest build-lc4j-metadata-test
   ;; Test metadata conversion from Clojure maps to LangChain4j Metadata objects
   ;; Verifies keyword keys are converted to strings and values are accessible
@@ -26,6 +31,7 @@
         (is (instance? Metadata lc4j-meta))
         (is (= "doc" (.getString lc4j-meta "type")))
         (is (= "v1" (.getString lc4j-meta "version")))))))
+
 
 (deftest create-segment-descriptor-test
   ;; Test segment descriptor creation with enhanced metadata

@@ -6,6 +6,7 @@
     [mcp-vector-search.ingest.common :as common]
     [mcp-vector-search.ingest.single-segment :as sut]))
 
+
 (deftest embed-content-test
   ;; Test embedding strategy multimethod
   (testing "embed-content multimethod"
@@ -40,6 +41,7 @@
         ;; Enhanced metadata should not affect original
         (is (= "foo" (get-in result [:metadata :namespace])))))))
 
+
 (deftest extract-content-test
   ;; Test content extraction strategy multimethod
   (testing "extract-content multimethod"
@@ -53,6 +55,7 @@
     (testing "metadata parameter is available but unused by built-ins"
       (is (= "c" (sut/extract-content :whole-document "p" "c" {:x 1})))
       (is (= "p" (sut/extract-content :file-path "p" "c" {:x 1}))))))
+
 
 (deftest process-document-forwarding-test
   ;; Test forwarding implementations maintain backward compatibility
@@ -121,6 +124,7 @@
           (finally
             (.delete test-file)
             (.delete test-dir)))))))
+
 
 (deftest process-document-single-segment-test
   ;; Test direct :single-segment usage with explicit strategies
