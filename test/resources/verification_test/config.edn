@@ -1,0 +1,2 @@
+{:sources [{:path "test/resources/verification_test/**/*.md"
+            :name "Test docs"}]}

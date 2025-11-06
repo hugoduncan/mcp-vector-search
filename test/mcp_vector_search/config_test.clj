@@ -1,0 +1,276 @@
+(ns mcp-vector-search.config-test
+  (:require
+    [babashka.fs :as fs]
+    [clojure.java.io :as io]
+    [clojure.test :refer [deftest testing is]]
+    [mcp-vector-search.config :as sut]))
+
+
+(deftest load-config-test
+  ;; Test loading EDN configuration files from filesystem and classpath
+  (testing "load-config"
+    (testing "loads from explicit filesystem path"
+      (let [test-file (io/file "test/mcp_vector_search/test-resources/config_test/explicit.edn")]
+        (.mkdirs (.getParentFile test-file))
+        (spit test-file "{:sources [{:path \"/docs/*.md\"}]}")
+        (try
+          (let [result (sut/load-config (.getPath test-file))]
+            (is (map? result))
+            (is (= [{:path "/docs/*.md"}] (:sources result))))
+          (finally
+            (.delete test-file)))))
+
+    (testing "loads from default locations when no explicit path provided"
+      ;; Create temporary home directory with config file
+      (let [original-home (System/getProperty "user.home")
+            temp-dir (fs/create-temp-dir {:prefix "config-test"})
+            temp-dir-file (fs/file temp-dir)
+            config-dir (io/file temp-dir-file ".mcp-vector-search")
+            config-file (io/file config-dir "config.edn")]
+        (try
+          (.mkdirs config-dir)
+          (spit config-file "{:description \"Test config\" :sources [{:path \"/docs/*.md\"}]}")
+          (System/setProperty "user.home" (str temp-dir-file))
+          (let [result (sut/load-config)]
+            (is (map? result))
+            (is (= "Test config" (:description result)))
+            (is (= [{:path "/docs/*.md"}] (:sources result))))
+          (finally
+            (System/setProperty "user.home" original-home)
+            (fs/delete-tree temp-dir)))))
+
+    (testing "throws when config not found"
+      (is (thrown-with-msg? Exception #"No configuration file found"
+            (sut/load-config "/nonexistent/config.edn"))))
+
+    (testing "handles nested structures"
+      (let [test-file (io/file "test/mcp_vector_search/test-resources/config_test/nested.edn")]
+        (.mkdirs (.getParentFile test-file))
+        (spit test-file "{:outer {:inner {:value 123}}}")
+        (try
+          (let [result (sut/load-config (.getPath test-file))]
+            (is (= 123 (get-in result [:outer :inner :value]))))
+          (finally
+            (.delete test-file)))))))
+
+
+(deftest parse-path-spec-test
+  ;; Test parsing path specifications with literals, globs, and named captures
+  (testing "parse-path-spec"
+
+    (testing "parses literal-only paths"
+      (let [result (sut/parse-path-spec "/simple/path/file.md")]
+        (is (= [{:type :literal :value "/simple/path/file.md"}]
+               (:segments result)))
+        (is (= "/simple/path/file.md" (:base-path result)))))
+
+    (testing "parses single glob pattern"
+      (let [result (sut/parse-path-spec "/docs/*.md")]
+        (is (= [{:type :literal :value "/docs/"}
+                {:type :glob :pattern "*"}
+                {:type :literal :value ".md"}]
+               (:segments result)))
+        (is (= "/docs/" (:base-path result)))))
+
+    (testing "parses recursive glob pattern"
+      (let [result (sut/parse-path-spec "/docs/**/guide.md")]
+        (is (= [{:type :literal :value "/docs/"}
+                {:type :glob :pattern "**"}
+                {:type :literal :value "/guide.md"}]
+               (:segments result)))
+        (is (= "/docs/" (:base-path result)))))
+
+    (testing "parses named capture with simple regex"
+      (let [result (sut/parse-path-spec "/v(?<version>[0-9]+)/doc.md")]
+        (is (= [{:type :literal :value "/v"}
+                {:type :capture :name "version" :pattern "[0-9]+"}
+                {:type :literal :value "/doc.md"}]
+               (:segments result)))
+        (is (= "/v" (:base-path result)))))
+
+    (testing "parses named capture with complex regex"
+      (let [result (sut/parse-path-spec "/(?<version>[^/]*)/file")]
+        (is (= [{:type :literal :value "/"}
+                {:type :capture :name "version" :pattern "[^/]*"}
+                {:type :literal :value "/file"}]
+               (:segments result)))
+        (is (= "/" (:base-path result)))))
+
+    (testing "parses mixed pattern with multiple captures"
+      (let [result (sut/parse-path-spec "/(?<lang>[^/]*)/(?<ver>v[0-9]+)/**/*.md")]
+        (is (= [{:type :literal :value "/"}
+                {:type :capture :name "lang" :pattern "[^/]*"}
+                {:type :literal :value "/"}
+                {:type :capture :name "ver" :pattern "v[0-9]+"}
+                {:type :literal :value "/"}
+                {:type :glob :pattern "**"}
+                {:type :literal :value "/"}
+                {:type :glob :pattern "*"}
+                {:type :literal :value ".md"}]
+               (:segments result)))
+        (is (= "/" (:base-path result)))))
+
+    (testing "parses glob and capture combination"
+      (let [result (sut/parse-path-spec "/docs/(?<version>[^/]*)/**.md")]
+        (is (= [{:type :literal :value "/docs/"}
+                {:type :capture :name "version" :pattern "[^/]*"}
+                {:type :literal :value "/"}
+                {:type :glob :pattern "**"}
+                {:type :literal :value ".md"}]
+               (:segments result)))
+        (is (= "/docs/" (:base-path result)))))
+
+    (testing "handles capture at end of path"
+      (let [result (sut/parse-path-spec "/docs/(?<name>[^.]+)\\.md")]
+        (is (= [{:type :literal :value "/docs/"}
+                {:type :capture :name "name" :pattern "[^.]+"}
+                {:type :literal :value "\\.md"}]
+               (:segments result)))
+        (is (= "/docs/" (:base-path result)))))
+
+    (testing "correctly parses /** between literals"
+      (let [result (sut/parse-path-spec "/docs/**/file.md")]
+        (is (= [{:type :literal :value "/docs/"}
+                {:type :glob :pattern "**"}
+                {:type :literal :value "/file.md"}]
+               (:segments result)))
+        (is (= "/docs/" (:base-path result)))))
+
+    (testing "correctly parses multiple special characters in order"
+      (let [result (sut/parse-path-spec "/(?<version>v[0-9]+)/**/*.md")]
+        (is (= [{:type :literal :value "/"}
+                {:type :capture :name "version" :pattern "v[0-9]+"}
+                {:type :literal :value "/"}
+                {:type :glob :pattern "**"}
+                {:type :literal :value "/"}
+                {:type :glob :pattern "*"}
+                {:type :literal :value ".md"}]
+               (:segments result)))
+        (is (= "/" (:base-path result)))))
+
+    (testing "throws on malformed capture - missing closing"
+      (is (thrown? Exception (sut/parse-path-spec "/(?<version[^/]*)/file"))))
+
+    (testing "throws on malformed capture - missing name"
+      (is (thrown? Exception (sut/parse-path-spec "/(?<>[^/]*)/file"))))
+
+    (testing "throws on invalid regex in capture"
+      (is (thrown? Exception (sut/parse-path-spec "/(?<ver>[[[)/file"))))))
+
+
+(deftest process-config-test
+  ;; Test processing user config into internal format
+  (testing "process-config"
+
+    (testing "uses default description when not provided"
+      (let [config {:sources [{:path "/docs/*.md"}]}
+            result (sut/process-config config)]
+        (is (= sut/default-search-description (:description result)))))
+
+    (testing "uses custom description when provided"
+      (let [config {:sources [{:path "/docs/*.md"}]
+                    :description "Custom search description"}
+            result (sut/process-config config)]
+        (is (= "Custom search description" (:description result)))))
+
+    (testing "includes description even without sources"
+      (let [config {}
+            result (sut/process-config config)]
+        (is (= sut/default-search-description (:description result)))))
+
+    (testing "adds default :ingest strategy"
+      (let [config {:sources [{:path "/docs/*.md"}]}
+            result (sut/process-config config)]
+        (is (= 1 (count (:path-specs result))))
+        (is (= :whole-document (get-in result [:path-specs 0 :ingest])))))
+
+    (testing "preserves explicit :ingest strategy"
+      (let [config {:sources [{:path "/docs/*.md"
+                               :ingest :custom-pipeline}]}
+            result (sut/process-config config)]
+        (is (= :custom-pipeline (get-in result [:path-specs 0 :ingest])))))
+
+    (testing ":ingest is not included in base-metadata"
+      (let [config {:sources [{:path "/docs/*.md"
+                               :ingest :whole-document
+                               :category "docs"}]}
+            result (sut/process-config config)]
+        (is (= {:category "docs"} (get-in result [:path-specs 0 :base-metadata])))
+        (is (nil? (get-in result [:path-specs 0 :base-metadata :ingest])))))
+
+    (testing ":single-segment validation"
+      (testing "throws when :embedding is missing"
+        (let [config {:sources [{:path "/docs/*.md"
+                                 :ingest :single-segment
+                                 :content-strategy :whole-document}]}]
+          (is (thrown-with-msg? Exception #"Missing :embedding key"
+                (sut/process-config config)))))
+
+      (testing "throws when :content-strategy is missing"
+        (let [config {:sources [{:path "/docs/*.md"
+                                 :ingest :single-segment
+                                 :embedding :whole-document}]}]
+          (is (thrown-with-msg? Exception #"Missing :content-strategy key"
+                (sut/process-config config)))))
+
+      (testing "succeeds when both :embedding and :content-strategy are present"
+        (let [config {:sources [{:path "/docs/*.md"
+                                 :ingest :single-segment
+                                 :embedding :whole-document
+                                 :content-strategy :file-path}]}
+              result (sut/process-config config)]
+          (is (= :single-segment (get-in result [:path-specs 0 :ingest])))
+          (is (= 1 (count (:path-specs result))))))
+
+      (testing ":embedding and :content-strategy are not included in base-metadata"
+        (let [config {:sources [{:path "/docs/*.md"
+                                 :ingest :single-segment
+                                 :embedding :whole-document
+                                 :content-strategy :file-path
+                                 :category "docs"}]}
+              result (sut/process-config config)]
+          (is (= {:category "docs"} (get-in result [:path-specs 0 :base-metadata])))
+          (is (nil? (get-in result [:path-specs 0 :base-metadata :embedding])))
+          (is (nil? (get-in result [:path-specs 0 :base-metadata :content-strategy]))))))
+
+    (testing "source validation"
+      (testing "rejects sources with both :path and :class-path"
+        (let [config {:sources [{:path "/docs/*.md"
+                                 :class-path "docs/*.md"}]}]
+          (is (thrown-with-msg? Exception #"cannot have both :path and :class-path"
+                (sut/process-config config)))))
+
+      (testing "rejects sources with neither :path nor :class-path"
+        (let [config {:sources [{:name "Test"}]}]
+          (is (thrown-with-msg? Exception #"must have either :path or :class-path"
+                (sut/process-config config)))))
+
+      (testing "accepts :class-path sources"
+        (let [config {:sources [{:class-path "docs/*.md"}]}
+              result (sut/process-config config)]
+          (is (= 1 (count (:path-specs result))))
+          (is (= :classpath (get-in result [:path-specs 0 :source-type])))))))
+
+  (testing ":source-type assignment"
+    (testing "assigns :filesystem for :path sources"
+      (let [config {:sources [{:path "/docs/*.md"}]}
+            result (sut/process-config config)]
+        (is (= :filesystem (get-in result [:path-specs 0 :source-type])))))
+
+    (testing "assigns :classpath for :class-path sources"
+      (let [config {:sources [{:class-path "docs/*.md"}]}
+            result (sut/process-config config)]
+        (is (= :classpath (get-in result [:path-specs 0 :source-type])))))))
+
+
+(testing "mixed filesystem and classpath sources"
+  (let [config {:sources [{:path "/local/docs/*.md"
+                           :name "Local"}
+                          {:class-path "embedded/docs/*.md"
+                           :name "Embedded"}]}
+        result (sut/process-config config)]
+    (is (= 2 (count (:path-specs result))))
+    (is (= :filesystem (get-in result [:path-specs 0 :source-type])))
+    (is (= :classpath (get-in result [:path-specs 1 :source-type])))
+    (is (= "Local" (get-in result [:path-specs 0 :base-metadata :name])))
+    (is (= "Embedded" (get-in result [:path-specs 1 :base-metadata :name])))))
