@@ -2,7 +2,7 @@
 
 ## Overview
 
-File watching functionality uses the hawk library for cross-platform file system event monitoring. Due to hawk's async behavior and platform-specific timing, automated integration tests are unreliable.
+File watching functionality uses the beholder library for cross-platform file system event monitoring. Due to beholder's event timing and our debouncing logic, automated integration tests are unreliable.
 
 ## Automated Tests
 
@@ -15,21 +15,20 @@ Verify core watch logic:
 **25 assertions, all passing**
 
 ### Integration Tests (`watch_integration_test.clj`)
-Test re-indexing logic without hawk timing dependencies:
+Test re-indexing logic without beholder timing dependencies:
 - Re-ingesting modified files (simulating MODIFY events)
 - Removing deleted files (simulating DELETE events)
 - Adding newly created files (simulating CREATE events)
 - Handling multiple rapid changes (simulating debouncing)
 
 These tests directly call the ingestion logic that watch event handlers
-would trigger, verifying the behavior without relying on hawk's async
+would trigger, verifying the behavior without relying on beholder's async
 event delivery.
 
 **7 assertions, all passing**
 
-Note: Even hawk's own tests acknowledge timing challenges with comments
-like "FIXME: this is racey". Our integration tests avoid these issues
-by testing the logic independently of the watch mechanism.
+Our integration tests avoid timing challenges by testing the logic
+independently of the watch mechanism.
 
 ## Manual Testing
 
@@ -78,16 +77,16 @@ Press Ctrl+C to exit and clean up.
 ## Platform Notes
 
 ### macOS
-- Uses Barbary WatchService
+- Uses JNA-based native WatchService for better performance
 - `/var` is symlinked to `/private/var` - handled by path normalization
 - File events typically arrive within 1-2 seconds
 
 ### Linux
-- Uses Java NIO WatchService
-- Generally faster event delivery than macOS
+- Uses directory-watcher for accurate recursive watching
+- Generally fast and reliable event delivery
 
 ### Windows
-- Uses Java NIO WatchService
+- Uses directory-watcher for accurate recursive watching
 - Not extensively tested but should work
 
 ## Timing Characteristics
@@ -96,4 +95,4 @@ Press Ctrl+C to exit and clean up.
 - **Event latency**: Platform-dependent, typically 1-3 seconds
 - **Watch setup**: Nearly instantaneous
 
-Hawk's latency varies by platform and watcher implementation. The polling fallback has configurable sensitivity (`:high`, `:medium`, `:low`) but exact timings are undocumented.
+Beholder uses the directory-watcher Java library which provides accurate and efficient recursive watching across all platforms.

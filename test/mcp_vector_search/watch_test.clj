@@ -2,9 +2,9 @@
   (:require
     [babashka.fs :as fs]
     [clojure.test :refer [deftest testing is]]
-    [hawk.core :as hawk]
     [mcp-vector-search.config :as config]
-    [mcp-vector-search.watch :as watch])
+    [mcp-vector-search.watch :as watch]
+    [nextjournal.beholder :as beholder])
   (:import
     (dev.langchain4j.model.embedding.onnx.allminilml6v2
       AllMiniLmL6V2EmbeddingModel)
@@ -209,10 +209,9 @@
         (finally
           (fs/delete-tree temp-dir)))))
 
-  (testing "watch filter and handler are called"
+  (testing "watch callback is called"
     (let [temp-dir (fs/create-temp-dir)
-          filter-called (atom [])
-          handler-called (atom [])
+          callback-called (atom [])
           system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
                         :embedding-store (InMemoryEmbeddingStore.)
                         :metadata-values (atom {})})
@@ -221,30 +220,16 @@
           parsed-config (config/process-config config)]
 
       (try
-        ;; Track filter and handler calls
-        (let [original-watch! hawk/watch!]
-          (with-redefs [hawk/watch!
-                        (fn [watch-specs]
-                          ;; Wrap the filter and handler to track calls
-                          (let [spec (first watch-specs)
-                                original-filter (:filter spec)
-                                original-handler (:handler spec)
-                                wrapped-spec (-> spec
-                                                 (assoc :filter
-                                                        (fn [ctx event]
-                                                          (let [result (original-filter ctx event)
-                                                                ^File file (:file event)]
-                                                            (swap! filter-called conj
-                                                                   {:file (.getPath file)
-                                                                    :result result})
-                                                            result)))
-                                                 (assoc :handler
-                                                        (fn [ctx event]
-                                                          (let [^File file (:file event)]
-                                                            (swap! handler-called conj
-                                                                   {:file (.getPath file)})
-                                                            (original-handler ctx event)))))]
-                            (original-watch! [wrapped-spec])))]
+        ;; Track callback calls
+        (let [original-watch beholder/watch]
+          (with-redefs [beholder/watch
+                        (fn [callback path]
+                          ;; Wrap the callback to track calls
+                          (original-watch
+                            (fn [event]
+                              (swap! callback-called conj event)
+                              (callback event))
+                            path))]
 
             ;; Start the watch
             (let [watchers (watch/start-watches system parsed-config)]
@@ -260,18 +245,9 @@
                 ;; Wait for processing
                 (Thread/sleep 1000)
 
-                ;; Check if filter was called
-                (is (pos? (count @filter-called))
-                    (str "Filter should be called. Filter calls: " @filter-called))
-
-                ;; Check if any filter calls returned true
-                (let [accepted (filter :result @filter-called)]
-                  (is (pos? (count accepted))
-                      (str "At least one file should pass filter. Accepted: " accepted)))
-
-                ;; Check if handler was called
-                (is (pos? (count @handler-called))
-                    (str "Handler should be called. Handler calls: " @handler-called))
+                ;; Check if callback was called
+                (is (pos? (count @callback-called))
+                    (str "Callback should be called. Callback calls: " @callback-called))
 
                 (finally
                   (watch/stop-watches watchers))))))

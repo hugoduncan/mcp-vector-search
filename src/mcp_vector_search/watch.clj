@@ -7,21 +7,20 @@
   Provides lifecycle management for watch resources.
 
   ## Implementation Notes
-  Uses hawk library for filesystem watching. Events are debounced (500ms) to
+  Uses beholder library for filesystem watching. Events are debounced (500ms) to
   avoid excessive re-indexing when multiple rapid changes occur. Path
   normalization handles symlinks (e.g., /var -> /private/var on macOS).
   Modified and deleted files have all segments removed by querying file-id
   metadata and extracting internal IDs. This supports multi-segment files where
   multiple embeddings share the same file-id."
-  (:refer-clojure :exclude [file?])
   (:require
     [clojure.java.io :as io]
     [clojure.string :as str]
-    [hawk.core :as hawk]
     [mcp-clj.mcp-server.logging :as logging]
     [mcp-vector-search.config :as config]
     [mcp-vector-search.ingest :as ingest]
-    [mcp-vector-search.util :as util])
+    [mcp-vector-search.util :as util]
+    [nextjournal.beholder :as beholder])
   (:import
     (dev.langchain4j.data.segment
       TextSegment)
@@ -244,9 +243,24 @@
     (.matches matcher)))
 
 
+(defn- should-process-event?
+  "Determine if a watch event should be processed.
+  Returns true if the path is a file and matches the path-spec pattern."
+  [path-str normalized-segments system-atom watch-path]
+  (let [file (io/file path-str)
+        is-file? (.isFile file)
+        file-path (util/normalize-file-path path-str)
+        matches? (matches-path-spec? file-path normalized-segments)]
+    (when (and is-file? (not matches?))
+      (log-if-server @system-atom :info {:event "file-filtered-out"
+                                         :path file-path
+                                         :watch-path watch-path}))
+    (and is-file? matches?)))
+
+
 (defn- setup-watch
   "Setup a watch for a single path-spec.
-  Returns a hawk watcher handle."
+  Returns a beholder watcher handle."
   [system-atom path-spec]
   (let [{:keys [base-path segments]} path-spec
         ;; Convert relative paths to absolute, then normalize to handle symlinks
@@ -294,21 +308,20 @@
       (log-if-server system-map :info {:event "watch-started"
                                        :path watch-path
                                        :recursive recursive?})
-      (hawk/watch!
-        [{:paths [watch-path]
-          :filter (fn [ctx {:keys [file] :as event}]
-                    (let [is-file? (hawk/file? ctx event)
-                          file-path (util/normalize-file-path (.getPath ^File file))
-                          matches? (matches-path-spec? file-path normalized-segments)
-                          should-process? (and is-file? matches?)]
-                      (when (and is-file? (not matches?))
-                        (log-if-server system-map :info {:event "file-filtered-out"
-                                                         :path file-path
-                                                         :watch-path watch-path}))
-                      should-process?))
-          :handler (fn [ctx event]
-                     (debounce-event system-atom (util/normalize-file-path (.getPath ^File (:file event))) event normalized-path-spec)
-                     ctx)}])
+      ;; Beholder automatically watches directories recursively using directory-watcher.
+      ;; Unlike hawk which required explicit recursive configuration, beholder handles
+      ;; this natively on all platforms (macOS via JNA, Linux/Windows via directory-watcher).
+      (beholder/watch
+        ;; Callback runs asynchronously, needs fresh system state
+        ;; (system-map captured above would be stale)
+        (fn [{:keys [type ^java.nio.file.Path path]}]
+          (let [path-str (str path)]
+            (when (should-process-event? path-str normalized-segments system-atom watch-path)
+              (debounce-event system-atom
+                              (util/normalize-file-path path-str)
+                              {:kind type :file (io/file path-str)}
+                              normalized-path-spec))))
+        watch-path)
       (catch Exception e
         (log-if-server system-map :error {:event "watch-setup-failed"
                                           :path normalized-base
@@ -321,7 +334,7 @@
 (defn start-watches
   "Start file watching for all path-specs with :watch? enabled.
   Takes a system atom and parsed config with :path-specs.
-  Returns a vector of hawk watcher handles.
+  Returns a vector of beholder watcher handles.
 
   Excludes classpath sources (read-only) from watching."
   [system-atom {:keys [path-specs watch?] :as _config}]
@@ -348,11 +361,11 @@
 
 (defn stop-watches
   "Stop all file watches.
-  Takes a vector of hawk watcher handles."
+  Takes a vector of beholder watcher handles."
   [watchers]
   (doseq [watcher watchers]
     (try
-      (hawk/stop! watcher)
+      (beholder/stop watcher)
       (catch Exception e
         (println "Error stopping watch:" (.getMessage e)))))
 

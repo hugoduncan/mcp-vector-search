@@ -1,5 +1,5 @@
 (ns mcp-vector-search.watch-integration-test
-  "Integration tests for watch re-indexing logic (without hawk timing dependencies)."
+  "Integration tests for watch re-indexing logic without beholder timing dependencies."
   (:require
     [babashka.fs :as fs]
     [clojure.string :as str]

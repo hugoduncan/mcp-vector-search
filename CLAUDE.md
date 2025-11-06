@@ -221,7 +221,7 @@ Optional file watching system for automatic re-indexing:
 - Only files matching path spec patterns are processed
 
 **Behavior**:
-- Uses `hawk` library for filesystem watching
+- Uses `beholder` library for filesystem watching
 - Events are debounced (500ms) to avoid excessive re-indexing
 - Operations:
   - File created → index new file

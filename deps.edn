@@ -19,7 +19,7 @@
          org.slf4j/slf4j-nop   {:mvn/version "2.0.17"}
          org.clojure/clojure   {:mvn/version "1.12.3"}
          org.clojure/data.json {:mvn/version "2.5.1"}
-         hawk/hawk             {:mvn/version "0.2.11"}
+         com.nextjournal/beholder {:mvn/version "1.0.3"}
          io.github.classgraph/classgraph {:mvn/version "4.8.181"}
          clj-kondo/clj-kondo   {:mvn/version "2025.07.28"}}
 

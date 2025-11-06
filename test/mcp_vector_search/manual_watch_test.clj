@@ -1,7 +1,7 @@
 (ns mcp-vector-search.manual-watch-test
   "Manual test script for file watching functionality.
 
-  Due to hawk's async behavior and platform-specific timing, automated
+  Due to beholder's async behavior and platform-specific timing, automated
   integration tests for file watching are unreliable. This manual test
   script provides a way to verify watch functionality interactively.
 
