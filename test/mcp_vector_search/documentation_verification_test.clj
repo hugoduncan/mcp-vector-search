@@ -2,10 +2,7 @@
   "Tests to verify documentation examples work correctly."
   (:require
     [clojure.test :refer [deftest testing is]]
-    [mcp-vector-search.config :as config]
-    [mcp-vector-search.ingest :as ingest]
-    [mcp-vector-search.lifecycle :as lifecycle]
-    [mcp-vector-search.tools :as tools]))
+    [mcp-vector-search.config :as config]))
 
 
 (deftest readme-quick-start-config-test

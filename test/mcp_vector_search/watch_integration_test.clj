@@ -468,9 +468,9 @@
 
     (testing "verifies chunk metadata during re-indexing"
       (let [temp-dir (fs/create-temp-dir)
-            system (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
-                          :embedding-store (InMemoryEmbeddingStore.)
-                          :metadata-values {}})]
+            _ (atom {:embedding-model (AllMiniLmL6V2EmbeddingModel.)
+                     :embedding-store (InMemoryEmbeddingStore.)
+                     :metadata-values {}})]
         (try
           (let [test-file (fs/file temp-dir "test.md")
                 canonical-path (.getCanonicalPath test-file)
@@ -481,33 +481,32 @@
                 _ (spit test-file test-content)
                 metadata {:custom "value"
                           :chunk-size 400
-                          :chunk-overlap 80}]
+                          :chunk-overlap 80}
+                ;; Process document directly to get segments
+                segments (common/process-document :chunked
+                                                  canonical-path
+                                                  test-content
+                                                  metadata)]
 
-            ;; Process document directly to get segments
-            (let [segments (common/process-document :chunked
-                                                    canonical-path
-                                                    test-content
-                                                    metadata)]
-              ;; Verify all segments have required chunk metadata
-              (is (every? #(contains? (:metadata %) :chunk-index) segments)
-                  "All segments should have :chunk-index")
-              (is (every? #(contains? (:metadata %) :chunk-count) segments)
-                  "All segments should have :chunk-count")
-              (is (every? #(contains? (:metadata %) :chunk-offset) segments)
-                  "All segments should have :chunk-offset")
+            ;; Verify all segments have required chunk metadata
+            (is (every? #(contains? (:metadata %) :chunk-index) segments)
+                "All segments should have :chunk-index")
+            (is (every? #(contains? (:metadata %) :chunk-count) segments)
+                "All segments should have :chunk-count")
+            (is (every? #(contains? (:metadata %) :chunk-offset) segments)
+                "All segments should have :chunk-offset")
 
-              ;; Verify custom metadata propagated to all chunks
-              (is (every? #(= "value" (get-in % [:metadata :custom])) segments)
-                  "Custom metadata should propagate to all chunks")
+            ;; Verify custom metadata propagated to all chunks
+            (is (every? #(= "value" (get-in % [:metadata :custom])) segments)
+                "Custom metadata should propagate to all chunks")
 
-              ;; Verify chunk indices are sequential
-              (let [indices (map #(get-in % [:metadata :chunk-index]) segments)]
-                (is (= (range (count segments)) indices)
-                    "Chunk indices should be sequential from 0"))
+            ;; Verify chunk indices are sequential
+            (is (= (range (count segments))
+                   (map #(get-in % [:metadata :chunk-index]) segments))
+                "Chunk indices should be sequential from 0")
 
-              ;; Verify all chunks know the total count
-              (let [total-count (count segments)]
-                (is (every? #(= total-count (get-in % [:metadata :chunk-count])) segments)
-                    "All chunks should have same :chunk-count"))))
+            ;; Verify all chunks know the total count
+            (is (every? #(= (count segments) (get-in % [:metadata :chunk-count])) segments)
+                "All chunks should have same :chunk-count"))
           (finally
             (fs/delete-tree temp-dir)))))))

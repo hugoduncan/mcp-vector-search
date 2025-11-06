@@ -4,12 +4,7 @@
     [clojure.test :refer [deftest testing is]]
     [mcp-vector-search.ingest :as ingest]
     [mcp-vector-search.ingest.chunked]
-    [mcp-vector-search.ingest.common :as common])
-  (:import
-    (dev.langchain4j.model.embedding.onnx.allminilml6v2
-      AllMiniLmL6V2EmbeddingModel)
-    (dev.langchain4j.store.embedding.inmemory
-      InMemoryEmbeddingStore)))
+    [mcp-vector-search.ingest.common :as common]))
 
 
 (deftest chunked-document-test
@@ -206,9 +201,7 @@
                     ^String content-n+1 (:text-to-embed chunk-n+1)
                     overlap-size 100
                     ;; Get last overlap-size chars from chunk N
-                    suffix-n (subs content-n (max 0 (- (count content-n) overlap-size)))
-                    ;; Get first overlap-size chars from chunk N+1
-                    prefix-n+1 (subs content-n+1 0 (min overlap-size (count content-n+1)))]
+                    suffix-n (subs content-n (max 0 (- (count content-n) overlap-size)))]
                 ;; The overlap may not be exactly 100 chars due to paragraph boundaries,
                 ;; but there should be some overlap between adjacent chunks.
                 ;; Check if suffix appears in the prefix (accounting for boundary trimming)

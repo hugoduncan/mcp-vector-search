@@ -198,7 +198,7 @@
   (testing "MCP resources"
 
     (testing "resources are discoverable via resource-definitions"
-      (let [system (lifecycle/start)
+      (let [_ (lifecycle/start)
             resource-defs (resources/resource-definitions lifecycle/system)]
 
         ;; Verify all 5 resources are present
@@ -352,12 +352,12 @@
                           :metadata-values {}})
             _ (ingest/ingest system processed-config)
             search-tool (tools/search-tool system processed-config)
-            impl (:implementation search-tool)]
+            impl (:implementation search-tool)
+            ;; Search with metadata filter should succeed
+            result (impl nil {:query "sample" :metadata {"element-type" "namespace"}})]
 
-        ;; Search with metadata filter should succeed
-        (let [result (impl nil {:query "sample" :metadata {"element-type" "namespace"}})]
-          (is (false? (:isError result)))
-          (is (pos? (count (json/read-str (-> result :content first :text))))))))
+        (is (false? (:isError result)))
+        (is (pos? (count (json/read-str (-> result :content first :text)))))))
 
     (testing "ingests Java file"
       (let [test-fixtures-dir "test/resources/code_analysis_test"

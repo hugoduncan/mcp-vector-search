@@ -2,7 +2,7 @@
   (:require
     [clojure.string :as str]
     [clojure.test :refer [deftest testing is]]
-    [mcp-vector-search.ingest.code-analysis :as sut]
+    [mcp-vector-search.ingest.code-analysis]
     [mcp-vector-search.ingest.common :as common]))
 
 

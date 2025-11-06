@@ -32,8 +32,6 @@
       EmbeddingStore)
     (dev.langchain4j.store.embedding.filter.comparison
       IsEqualTo)
-    (java.io
-      File)
     (java.time
       Instant)
     (java.util
@@ -228,7 +226,7 @@
 
 (defn- should-watch-recursively?
   "Determine if watching should be recursive based on path-spec segments."
-  [segments base-path]
+  [segments]
   (let [remaining (drop-while #(= :literal (:type %)) segments)]
     (boolean (some #(and (= :glob (:type %))
                          (= "**" (:pattern %)))
@@ -301,7 +299,7 @@
         normalized-segments (:segments (config/parse-path-spec normalized-pattern))
         ;; Create normalized path-spec for event processing
         normalized-path-spec (assoc path-spec :segments normalized-segments)
-        recursive? (should-watch-recursively? normalized-segments normalized-base)
+        recursive? (should-watch-recursively? normalized-segments)
         system-map @system-atom]
 
     (try

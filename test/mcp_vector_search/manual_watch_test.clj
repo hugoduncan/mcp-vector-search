@@ -9,7 +9,6 @@
   (:require
     [babashka.fs :as fs]
     [mcp-vector-search.config :as config]
-    [mcp-vector-search.ingest :as ingest]
     [mcp-vector-search.watch :as watch])
   (:import
     (dev.langchain4j.data.segment
@@ -40,7 +39,7 @@
 
 
 (defn -main
-  [& args]
+  [& _]
   (let [temp-dir (fs/create-temp-dir {:prefix "watch-test"})
         _ (println "Test directory:" (str temp-dir))
         system {:embedding-model (AllMiniLmL6V2EmbeddingModel.)

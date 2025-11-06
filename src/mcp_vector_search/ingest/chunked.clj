@@ -44,7 +44,7 @@
                     {:chunk-size chunk-size :chunk-overlap chunk-overlap :path path}))))
 
 
-(defn- ^long next-chunk-offset
+(defn- next-chunk-offset
   "Calculate the character offset for the next chunk."
   ^long [^long current-offset chunk-text ^long chunk-overlap]
   (+ current-offset (- (count chunk-text) chunk-overlap)))

@@ -9,9 +9,7 @@
     (dev.langchain4j.model.embedding.onnx.allminilml6v2
       AllMiniLmL6V2EmbeddingModel)
     (dev.langchain4j.store.embedding.inmemory
-      InMemoryEmbeddingStore)
-    (java.io
-      File)))
+      InMemoryEmbeddingStore)))
 
 
 (deftest watch-configuration-test

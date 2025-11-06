@@ -9,10 +9,6 @@
     [mcp-vector-search.ingest.common :as common]
     [mcp-vector-search.tools :as tools])
   (:import
-    (dev.langchain4j.data.document
-      Metadata)
-    (dev.langchain4j.data.embedding
-      Embedding)
     (dev.langchain4j.model.embedding.onnx.allminilml6v2
       AllMiniLmL6V2EmbeddingModel)
     (dev.langchain4j.store.embedding.inmemory
