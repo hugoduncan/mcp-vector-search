@@ -98,21 +98,18 @@
     (testing "detects recursive glob after base path"
       (let [segments [{:type :literal :value "/docs/"}
                       {:type :glob :pattern "**"}
-                      {:type :literal :value ".md"}]
-            base-path "/docs/"]
-        (is (true? (#'watch/should-watch-recursively? segments base-path)))))
+                      {:type :literal :value ".md"}]]
+        (is (true? (#'watch/should-watch-recursively? segments)))))
 
     (testing "returns false for single-level globs only"
       (let [segments [{:type :literal :value "/docs/"}
                       {:type :glob :pattern "*"}
-                      {:type :literal :value ".md"}]
-            base-path "/docs/"]
-        (is (false? (#'watch/should-watch-recursively? segments base-path)))))
+                      {:type :literal :value ".md"}]]
+        (is (false? (#'watch/should-watch-recursively? segments)))))
 
     (testing "returns false for literal-only paths"
-      (let [segments [{:type :literal :value "/docs/readme.md"}]
-            base-path "/docs/readme.md"]
-        (is (false? (#'watch/should-watch-recursively? segments base-path)))))
+      (let [segments [{:type :literal :value "/docs/readme.md"}]]
+        (is (false? (#'watch/should-watch-recursively? segments)))))
 
     (testing "detects ** in middle of pattern"
       (let [segments [{:type :literal :value "/docs/"}
@@ -121,9 +118,8 @@
                       {:type :glob :pattern "**"}
                       {:type :literal :value "/"}
                       {:type :glob :pattern "*"}
-                      {:type :literal :value ".md"}]
-            base-path "/docs/"]
-        (is (true? (#'watch/should-watch-recursively? segments base-path)))))))
+                      {:type :literal :value ".md"}]]
+        (is (true? (#'watch/should-watch-recursively? segments)))))))
 
 
 (deftest watch-event-firing-test
